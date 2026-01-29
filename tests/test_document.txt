@@ -1,0 +1,64 @@
+# Scout — Test Document
+
+This is a sample document to test Scout's abbreviation detection capabilities.
+
+## Common Abbreviations
+
+The Application Programming Interface (API) is a crucial component of modern software development. APIs allow different software systems to communicate with each other.
+
+Natural Language Processing (NLP) enables computers to understand human language. NLP combines computational linguistics with machine learning and artificial intelligence.
+
+## Technical Terms
+
+CPU: Central Processing Unit
+GPU: Graphics Processing Unit  
+RAM: Random Access Memory
+
+The World Wide Web (WWW) revolutionized information sharing. HTML (HyperText Markup Language) is used to structure web content, while CSS (Cascading Style Sheets) handles styling.
+
+## Business & Organizations
+
+The Chief Executive Officer (CEO) reports to the board. Other C-suite roles include CFO (Chief Financial Officer) and CTO (Chief Technology Officer).
+
+UNESCO stands for United Nations Educational, Scientific and Cultural Organization.
+
+## Computing Protocols
+
+HTTP: HyperText Transfer Protocol
+HTTPS: HTTP Secure
+FTP: File Transfer Protocol
+SSH: Secure Shell
+
+JSON (JavaScript Object Notation) and XML (Extensible Markup Language) are common data formats.
+
+## Miscellaneous
+
+The Federal Bureau of Investigation (FBI) is a domestic intelligence agency. NASA (National Aeronautics and Space Administration) conducts space exploration.
+
+ASAP means as soon as possible.
+FAQ means Frequently Asked Questions.
+
+Machine Learning (ML) is a subset of AI.
+
+## Abbreviations Without Definitions
+
+Some abbreviations might not have explicit definitions:
+- DVD
+- CD
+- USB
+- PDF
+- ZIP
+
+These should be detected even without definitions in the text.
+
+## Complex Cases
+
+REST API (Representational State Transfer Application Programming Interface) is used in web services.
+
+The TCP/IP protocol suite enables internet communication.
+
+WYSIWYG editors ("What You See Is What You Get") are user-friendly.
+
+## End of Test Document
+
+This document contains approximately 30+ abbreviations for testing Scout's detection and extraction capabilities.
