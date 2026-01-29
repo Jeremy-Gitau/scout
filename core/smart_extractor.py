@@ -14,7 +14,7 @@ class SmartExtractor:
     Uses enhanced pattern matching for reliable abbreviation detection.
     """
     
-    def __init__(self, min_length: int = 2, max_length: int = 10, prefer_llm: bool = False):
+    def __init__(self, min_length: int = 2, max_length: int = 10, prefer_llm: bool = False, use_textblob: bool = False):
         """
         Initialize the smart extractor.
         
@@ -22,13 +22,14 @@ class SmartExtractor:
             min_length: Minimum abbreviation length
             max_length: Maximum abbreviation length
             prefer_llm: Ignored (kept for compatibility)
+            use_textblob: Enable TextBlob enhancement for better noun phrase extraction
         """
         self.min_length = min_length
         self.max_length = max_length
         
-        # Always use fast LLMExtractor (pattern-only, no model loading)
-        self.extractor = LLMExtractor(min_length, max_length, use_llm=False)
-        self.mode = "pattern"
+        # Use LLMExtractor with optional TextBlob enhancement
+        self.extractor = LLMExtractor(min_length, max_length, use_llm=False, use_textblob=use_textblob)
+        self.mode = "textblob" if use_textblob else "pattern"
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:
         """Extract abbreviations from text."""

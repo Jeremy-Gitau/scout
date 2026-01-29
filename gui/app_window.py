@@ -33,6 +33,7 @@ class ScoutApp:
         self.cancel_scan = False  # Flag to cancel ongoing scan
         self.current_results = {}
         self.log_expanded = False  # Log view collapsed by default
+        self.use_textblob = False  # TextBlob enhancement disabled by default
         
         # Setup logging
         self._setup_logging()
@@ -40,7 +41,7 @@ class ScoutApp:
         # Initialize core components
         self.scanner = Scanner()
         self.parser = Parser()
-        self.extractor = SmartExtractor(prefer_llm=False)  # Fast pattern matching
+        self.extractor = SmartExtractor(prefer_llm=False, use_textblob=self.use_textblob)
         self.exporter = Exporter()
         
         self._log("Scout initialized with fast pattern matching", "INFO")
@@ -424,7 +425,8 @@ class ScoutApp:
         self._log("="*60, "INFO")
         self._log("Starting new scan", "INFO")
         self._log(f"Target directory: {self.selected_directory}", "INFO")
-        self._log("Extraction mode: Pattern Matching (fast)", "INFO")
+        mode = "TextBlob Enhanced" if self.use_textblob else "Fast Pattern Matching"
+        self._log(f"Extraction mode: {mode}", "INFO")
         
         # Reset cancel flag
         self.cancel_scan = False
@@ -560,8 +562,9 @@ class ScoutApp:
         self.progress_label.config(text="Scan complete!")
         self.status_label.config(text=f"Found {stats['total_abbreviations']} abbreviations")
         
-        # Re-enable buttons
+        # Re-enable scan button and disable cancel button
         self.scan_btn.configure(state="normal")
+        self.cancel_btn_scan.configure(state="disabled")
         if self.current_results:
             self.export_btn.configure(state="normal")
             self.clear_btn.configure(state="normal")
@@ -676,10 +679,10 @@ class ScoutApp:
             self._display_results(filtered)
     
     def _show_settings_dialog(self):
-        """Show extraction method information."""
+        """Show extraction settings with TextBlob toggle."""
         settings_window = tk.Toplevel(self.root)
-        settings_window.title("About Extraction Method")
-        settings_window.geometry("500x300")
+        settings_window.title("Extraction Settings")
+        settings_window.geometry("550x400")
         settings_window.transient(self.root)
         settings_window.grab_set()
         settings_window.configure(bg='#f5f5f5')
@@ -700,16 +703,36 @@ class ScoutApp:
         
         ttk.Label(
             header_frame,
-            text="🎯 Pattern Matching",
-            font=("Helvetica", 20, "bold")
+            text="⚙️ Extraction Settings",
+            font=("Helvetica", 18, "bold")
         ).pack()
         
         ttk.Label(
             header_frame,
-            text="Fast & Reliable Extraction",
-            font=("Helvetica", 11),
+            text="Configure extraction method",
+            font=("Helvetica", 10),
             bootstyle="secondary"
         ).pack(pady=(5, 0))
+        
+        # TextBlob toggle
+        textblob_var = tk.BooleanVar(value=self.use_textblob)
+        
+        toggle_frame = ttk.Frame(container)
+        toggle_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Checkbutton(
+            toggle_frame,
+            text="✨ Enable TextBlob Enhancement",
+            variable=textblob_var,
+            bootstyle="success-round-toggle"
+        ).pack(anchor="w")
+        
+        ttk.Label(
+            toggle_frame,
+            text="Better noun phrase extraction (~10-50ms slower per file)",
+            font=("Helvetica", 9),
+            bootstyle="secondary"
+        ).pack(anchor="w", padx=(30, 0))
         
         # Info section
         info_frame = ttk.Frame(container)
@@ -738,8 +761,39 @@ class ScoutApp:
                 font=("Helvetica", 11)
             ).pack(side="left", anchor="w")
         
-        # Close on click anywhere or Escape key
-        settings_window.bind("<Button-1>", lambda e: settings_window.destroy())
+        # Action buttons
+        button_frame = ttk.Frame(container)
+        button_frame.pack(fill="x", pady=(15, 0))
+        
+        def save_settings():
+            old_setting = self.use_textblob
+            self.use_textblob = textblob_var.get()
+            
+            if old_setting != self.use_textblob:
+                # Reinitialize extractor with new setting
+                self.extractor = SmartExtractor(prefer_llm=False, use_textblob=self.use_textblob)
+                mode = "TextBlob Enhanced" if self.use_textblob else "Fast Pattern"
+                self._log(f"Switched to {mode} mode", "INFO")
+                self.status_label.config(text=f"✓ Switched to {mode} mode")
+            
+            settings_window.destroy()
+        
+        ttk.Button(
+            button_frame,
+            text="💾 Save & Apply",
+            command=save_settings,
+            bootstyle="success",
+            width=20
+        ).pack(side="left", padx=(0, 10), ipady=10)
+        
+        ttk.Button(
+            button_frame,
+            text="✕ Cancel",
+            command=settings_window.destroy,
+            bootstyle="secondary",
+            width=15
+        ).pack(side="left", ipady=10)
+        
         settings_window.bind("<Escape>", lambda e: settings_window.destroy())
     
     def _show_export_menu(self):

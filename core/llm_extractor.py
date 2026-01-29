@@ -1,12 +1,18 @@
 """Fast pattern-based abbreviation extractor.
 Uses regex patterns to find explicit abbreviation definitions.
-Optimized for speed when processing many files.
+Optional TextBlob enhancement for better noun phrase extraction.
 """
 
 import re
 import os
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
+
+try:
+    from textblob import TextBlob
+    HAS_TEXTBLOB = True
+except ImportError:
+    HAS_TEXTBLOB = False
 
 try:
     import nltk
@@ -120,10 +126,11 @@ class LLMExtractor:
         """Get all words that should be excluded from abbreviation extraction."""
         return STOP_WORDS | cls.ADDITIONAL_EXCLUDES
     
-    def __init__(self, min_length: int = 2, max_length: int = 10, use_llm: bool = False):
+    def __init__(self, min_length: int = 2, max_length: int = 10, use_llm: bool = False, use_textblob: bool = False):
         self.min_length = min_length
         self.max_length = max_length
         self.abbreviations: Dict[str, dict] = {}
+        self.use_textblob = use_textblob and HAS_TEXTBLOB
     
     def _is_likely_abbreviation(self, word: str, text: str) -> bool:
         """
@@ -162,7 +169,7 @@ class LLMExtractor:
         return True
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:
-        """Extract abbreviations using fast pattern matching."""
+        """Extract abbreviations using pattern matching with optional TextBlob enhancement."""
         matches = self.ABBREV_PATTERN.findall(text)
         
         # Deduplicate matches first
@@ -205,7 +212,9 @@ class LLMExtractor:
         Fast and reliable for common patterns like \"Full Name (FN)\".
         """
         candidates = []
-        sentences = self._extract_sentences_with_abbrev(text, abbrev)        
+        sentences = self._extract_sentences_with_abbrev(text, abbrev)
+        
+        # Standard pattern matching (always runs first)
         for sentence in sentences:
             # Pattern: "Definition (ABBREV)" or "ABBREV (Definition)"
             # "Something (ABBREV)"
@@ -232,6 +241,33 @@ class LLMExtractor:
                 definition = match.group(1).strip()
                 words = definition.split()[:10]
                 candidates.append((' '.join(words), 0.95))
+        
+        # If pattern matching found something, return it
+        if candidates:
+            best = max(candidates, key=lambda x: x[1])
+            if best[0] and len(best[0]) > 3:
+                return best[0]
+        
+        # Only try TextBlob if pattern matching failed AND TextBlob is enabled
+        if not candidates and self.use_textblob and HAS_TEXTBLOB:
+            for sentence in sentences:
+                try:
+                    blob = TextBlob(sentence)
+                    # Look for noun phrases near the abbreviation
+                    for phrase in blob.noun_phrases:
+                        # Check if phrase appears with abbreviation in parentheses
+                        if f'({abbrev})' in sentence and phrase.lower() in sentence.lower():
+                            # Calculate proximity score
+                            abbrev_pos = sentence.find(f'({abbrev})')
+                            phrase_pos = sentence.lower().find(phrase.lower())
+                            distance = abs(abbrev_pos - phrase_pos)
+                            
+                            # Only consider if they're close (within 50 characters)
+                            if distance < 50:
+                                score = 0.7 - (distance / 100)  # Closer = higher score
+                                candidates.append((phrase.title(), score))
+                except Exception:
+                    pass  # Silently fail if TextBlob has issues
         
         # Return best candidate if available
         if candidates:
@@ -275,10 +311,13 @@ class LLMExtractor:
         total = len(self.abbreviations)
         with_def = sum(1 for v in self.abbreviations.values() if v.get('definition'))
         without_def = total - with_def
+        coverage = (with_def / total * 100) if total > 0 else 0
         
         return {
             'total': total,
+            'total_abbreviations': total,
             'with_definitions': with_def,
-            'without_definitions': without_def
+            'without_definitions': without_def,
+            'coverage_percent': round(coverage, 1)
         }
 
