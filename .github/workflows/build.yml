@@ -116,13 +116,18 @@ jobs:
         name: Scout-Linux
         path: ./artifacts/linux
     
+    - name: Rename artifacts for release
+      run: |
+        mv ./artifacts/macos/Scout ./artifacts/macos/Scout-macOS
+        mv ./artifacts/linux/Scout ./artifacts/linux/Scout-Linux
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
           ./artifacts/windows/Scout.exe
-          ./artifacts/macos/Scout
-          ./artifacts/linux/Scout
+          ./artifacts/macos/Scout-macOS
+          ./artifacts/linux/Scout-Linux
         body: |
           ## Scout Release
           
