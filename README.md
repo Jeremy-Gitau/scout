@@ -138,9 +138,9 @@ Interactive CLI for automation or scripting.
 
 ---
 
-## Building Standalone Executable
+## Building Standalone Executables
 
-### Using provided scripts:
+### Option 1: Build for Your Platform (Local)
 
 **macOS/Linux:**
 ```bash
@@ -159,6 +159,31 @@ pyinstaller --onefile --windowed --name Scout main.py
 ```
 
 Executable will be in `dist/` folder.
+
+### Option 2: Build for All Platforms (GitHub Actions)
+
+**Note:** PyInstaller can only build for the platform you're running on. You cannot build Windows executables from macOS, etc.
+
+**Automated Multi-Platform Builds:**
+
+1. Push code to GitHub:
+   ```bash
+   git remote add origin <your-repo-url>
+   git push -u origin main
+   ```
+
+2. GitHub Actions will automatically build for:
+   - ✅ Windows (Scout.exe)
+   - ✅ macOS (Scout - Universal)
+   - ✅ Linux (Scout)
+
+3. Download builds from the Actions tab or create a release:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+The workflow (`.github/workflows/build.yml`) handles all platforms automatically!
 
 ---
 
