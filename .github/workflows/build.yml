@@ -30,7 +30,7 @@ jobs:
         pyinstaller --onefile --windowed --name Scout --icon=assets/icon.ico main.py
     
     - name: Upload Windows artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: Scout-Windows
         path: dist/Scout.exe
@@ -56,7 +56,7 @@ jobs:
         pyinstaller --onefile --windowed --name Scout --icon=assets/icon.icns main.py
     
     - name: Upload macOS artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: Scout-macOS
         path: dist/Scout
@@ -84,7 +84,7 @@ jobs:
         pyinstaller --onefile --name Scout main.py
     
     - name: Upload Linux artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: Scout-Linux
         path: dist/Scout
@@ -96,7 +96,7 @@ jobs:
     
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
