@@ -7,6 +7,52 @@ import re
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
+try:
+    import nltk
+    from nltk.corpus import stopwords
+    try:
+        STOP_WORDS = set(word.upper() for word in stopwords.words('english'))
+        HAS_NLTK = True
+    except LookupError:
+        # Try to download with SSL fix
+        try:
+            import ssl
+            ssl._create_default_https_context = ssl._create_unverified_context
+            nltk.download('stopwords', quiet=True)
+            STOP_WORDS = set(word.upper() for word in stopwords.words('english'))
+            HAS_NLTK = True
+        except:
+            # Fallback to basic stopwords if download fails
+            HAS_NLTK = False
+            STOP_WORDS = {
+                'THE', 'BE', 'TO', 'OF', 'AND', 'A', 'IN', 'THAT', 'HAVE', 'I',
+                'IT', 'FOR', 'NOT', 'ON', 'WITH', 'HE', 'AS', 'YOU', 'DO', 'AT',
+                'THIS', 'BUT', 'HIS', 'BY', 'FROM', 'THEY', 'WE', 'SAY', 'HER', 'SHE',
+                'OR', 'AN', 'WILL', 'MY', 'ONE', 'ALL', 'WOULD', 'THERE', 'THEIR', 'WHAT',
+                'SO', 'UP', 'OUT', 'IF', 'ABOUT', 'WHO', 'GET', 'WHICH', 'GO', 'ME',
+                'WHEN', 'MAKE', 'CAN', 'LIKE', 'TIME', 'NO', 'JUST', 'HIM', 'KNOW', 'TAKE',
+                'PEOPLE', 'INTO', 'YEAR', 'YOUR', 'GOOD', 'SOME', 'COULD', 'THEM', 'SEE', 'OTHER',
+                'THAN', 'THEN', 'NOW', 'LOOK', 'ONLY', 'COME', 'ITS', 'OVER', 'THINK', 'ALSO',
+                'BACK', 'AFTER', 'USE', 'TWO', 'HOW', 'OUR', 'WORK', 'FIRST', 'WELL', 'WAY',
+                'EVEN', 'NEW', 'WANT', 'BECAUSE', 'ANY', 'THESE', 'GIVE', 'DAY', 'MOST', 'US',
+            }
+            print("⚠ NLTK stopwords unavailable, using basic fallback list")
+except ImportError:
+    HAS_NLTK = False
+    # Basic fallback stopwords
+    STOP_WORDS = {
+        'THE', 'BE', 'TO', 'OF', 'AND', 'A', 'IN', 'THAT', 'HAVE', 'I',
+        'IT', 'FOR', 'NOT', 'ON', 'WITH', 'HE', 'AS', 'YOU', 'DO', 'AT',
+        'THIS', 'BUT', 'HIS', 'BY', 'FROM', 'THEY', 'WE', 'SAY', 'HER', 'SHE',
+        'OR', 'AN', 'WILL', 'MY', 'ONE', 'ALL', 'WOULD', 'THERE', 'THEIR', 'WHAT',
+        'SO', 'UP', 'OUT', 'IF', 'ABOUT', 'WHO', 'GET', 'WHICH', 'GO', 'ME',
+        'WHEN', 'MAKE', 'CAN', 'LIKE', 'TIME', 'NO', 'JUST', 'HIM', 'KNOW', 'TAKE',
+        'PEOPLE', 'INTO', 'YEAR', 'YOUR', 'GOOD', 'SOME', 'COULD', 'THEM', 'SEE', 'OTHER',
+        'THAN', 'THEN', 'NOW', 'LOOK', 'ONLY', 'COME', 'ITS', 'OVER', 'THINK', 'ALSO',
+        'BACK', 'AFTER', 'USE', 'TWO', 'HOW', 'OUR', 'WORK', 'FIRST', 'WELL', 'WAY',
+        'EVEN', 'NEW', 'WANT', 'BECAUSE', 'ANY', 'THESE', 'GIVE', 'DAY', 'MOST', 'US',
+    }
+
 
 class Extractor:
     """Extracts abbreviations and definitions from text."""
@@ -14,10 +60,78 @@ class Extractor:
     # Pattern for detecting abbreviations (2-10 uppercase letters, may include numbers)
     ABBREV_PATTERN = re.compile(r'\b[A-Z][A-Z0-9]{1,9}\b')
     
+    # Domain-specific words to exclude beyond NLTK stopwords
+    ADDITIONAL_EXCLUDES = {
+        # Numbers
+        'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN',
+        'EIGHTEEN', 'NINETEEN', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY',
+        'EIGHTY', 'NINETY', 'HUNDRED', 'THOUSAND', 'MILLION', 'BILLION',
+        
+        # Ordinals
+        'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH', 'FIFTEENTH', 'SIXTEENTH',
+        'SEVENTEENTH', 'EIGHTEENTH', 'NINETEENTH', 'TWENTIETH',
+        
+        # Legal/government terms
+        'PARLIAMENT', 'SENATE', 'ASSEMBLY', 'COUNCIL', 'COURT', 'JUDGE', 'JUSTICE',
+        'PRESIDENT', 'MINISTER', 'SECRETARY', 'OFFICER', 'COMMISSION', 'COMMITTEE',
+        'BOARD', 'AUTHORITY', 'DEPARTMENT', 'AGENCY', 'SERVICE', 'REPUBLIC',
+        'CONSTITUTION', 'COUNTY', 'NATIONAL', 'PUBLIC', 'EXECUTIVE', 'LEGISLATIVE',
+        'JUDICIAL', 'FEDERAL', 'LOCAL', 'ELECTORAL', 'DEVOLVED', 'PRINCIPLES',
+        'RIGHTS', 'LAWS', 'OFFICES', 'OATH', 'REVENUE', 'FINANCE', 'BUDGET',
+        
+        # Places
+        'KENYA', 'AMERICA', 'AMERICAN', 'EUROPE', 'EUROPEAN', 'ASIA', 'ASIAN',
+        'AFRICA', 'AFRICAN', 'AUSTRALIA', 'CHINA', 'CHINESE', 'INDIA', 'INDIAN',
+        'JAPAN', 'JAPANESE', 'KOREA', 'KOREAN', 'RUSSIA', 'RUSSIAN', 'FRANCE',
+        'FRENCH', 'GERMANY', 'GERMAN', 'ITALY', 'ITALIAN', 'SPAIN', 'SPANISH',
+        'CANADA', 'CANADIAN', 'MEXICO', 'MEXICAN', 'BRAZIL', 'ENGLAND', 'ENGLISH',
+        'BRITISH', 'LONDON', 'PARIS', 'TOKYO', 'NAIROBI',
+        
+        # Days/months
+        'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY',
+        'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER',
+        'OCTOBER', 'NOVEMBER', 'DECEMBER',
+        
+        # Common nouns
+        'LAND', 'DEBT', 'ROLE', 'SEAL', 'FLAG', 'ARMS', 'COAT', 'GOD',
+    }
+    
+    @classmethod
+    def get_excluded_words(cls):
+        return STOP_WORDS | cls.ADDITIONAL_EXCLUDES
+    
     def __init__(self, min_length: int = 2, max_length: int = 10):
         self.min_length = min_length
         self.max_length = max_length
         self.abbreviations: Dict[str, dict] = {}
+    
+    def _is_likely_abbreviation(self, word: str, text: str) -> bool:
+        """Check if word is likely an abbreviation."""
+        excluded = self.get_excluded_words()
+        if word in excluded:
+            return False
+        
+        # Has numbers = likely abbreviation
+        if any(c.isdigit() for c in word):
+            return True
+        
+        # Check for definition patterns
+        patterns = [
+            rf'\([^)]*{re.escape(word)}[^)]*\)',
+            rf'{re.escape(word)}\s*[:\-—]',
+            rf'[:\-—]\s*{re.escape(word)}',
+        ]
+        
+        for pattern in patterns:
+            if re.search(pattern, text):
+                return True
+        
+        # Short words (2-4 chars) are likely abbreviations
+        if 2 <= len(word) <= 4:
+            return True
+        
+        # Long words in caps are probably emphasis, not abbreviations
+        return False
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:
         """
@@ -34,11 +148,18 @@ class Extractor:
         matches = self.ABBREV_PATTERN.findall(text)
         
         for abbrev in matches:
-            # Filter by length
-            if self.min_length <= len(abbrev) <= self.max_length:
-                # Try to find definition
-                definition = self._find_definition(text, abbrev)
-                
+            # Filter by length and likelihood
+            if not (self.min_length <= len(abbrev) <= self.max_length):
+                continue
+            
+            if not self._is_likely_abbreviation(abbrev, text):
+                continue
+            
+            # Try to find definition
+            definition = self._find_definition(text, abbrev)
+            
+            # Only add if we found a definition or it's a short word (likely real abbreviation)
+            if definition or len(abbrev) <= 4:
                 # Store or update abbreviation info
                 if abbrev not in self.abbreviations:
                     self.abbreviations[abbrev] = {

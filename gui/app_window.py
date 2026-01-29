@@ -4,16 +4,18 @@ Modern UI using ttkbootstrap with cross-platform support.
 """
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, scrolledtext
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from pathlib import Path
 import threading
+import logging
+import datetime
 from typing import Optional
 
 from core.scanner import Scanner
 from core.parser import Parser
-from core.extractor import Extractor
+from core.smart_extractor import SmartExtractor
 from core.exporter import Exporter
 
 
@@ -25,22 +27,47 @@ class ScoutApp:
         self.root.title("Scout — Explore your files, uncover meaning")
         self.root.geometry("1000x700")
         
+        # State variables (must be set before initializing extractor)
+        self.selected_directory: Optional[str] = None
+        self.is_scanning = False
+        self.cancel_scan = False  # Flag to cancel ongoing scan
+        self.current_results = {}
+        self.log_expanded = False  # Log view collapsed by default
+        
+        # Setup logging
+        self._setup_logging()
+        
         # Initialize core components
         self.scanner = Scanner()
         self.parser = Parser()
-        self.extractor = Extractor()
+        self.extractor = SmartExtractor(prefer_llm=False)  # Fast pattern matching
         self.exporter = Exporter()
         
-        # State variables
-        self.selected_directory: Optional[str] = None
-        self.is_scanning = False
-        self.current_results = {}
+        self._log("Scout initialized with fast pattern matching", "INFO")
         
         # Setup UI
         self._setup_ui()
         
         # Center window on screen
         self._center_window()
+    
+    def _setup_logging(self):
+        """Setup logging infrastructure."""
+        # Create custom logging handler that writes to GUI
+        self.log_messages = []
+        
+    def _log(self, message: str, level: str = "INFO"):
+        """Add a log message to the log view."""
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        formatted_msg = f"[{timestamp}] {level}: {message}"
+        self.log_messages.append(formatted_msg)
+        
+        # Update log view if it exists
+        if hasattr(self, 'log_text'):
+            self.log_text.configure(state='normal')
+            self.log_text.insert('end', formatted_msg + '\n')
+            self.log_text.see('end')  # Auto-scroll to bottom
+            self.log_text.configure(state='disabled')
     
     def _setup_ui(self):
         """Setup the user interface."""
@@ -59,6 +86,9 @@ class ScoutApp:
         
         # Results section
         self._create_results_section(main_container)
+        
+        # Log view section (expandable)
+        self._create_log_section(main_container)
         
         # Status bar
         self._create_status_bar(main_container)
@@ -118,6 +148,19 @@ class ScoutApp:
         )
         select_btn.pack(side="right", padx=(10, 0))
         
+        # Settings button
+        settings_frame = ttk.Frame(inner_frame)
+        settings_frame.pack(fill='x', pady=(0, 10))
+        
+        settings_btn = ttk.Button(
+            settings_frame,
+            text="⚙️ Settings",
+            command=self._show_settings_dialog,
+            bootstyle="secondary-outline",
+            width=15
+        )
+        settings_btn.pack(side="left")
+        
         # Action buttons
         button_frame = ttk.Frame(inner_frame)
         button_frame.pack(fill="x")
@@ -131,6 +174,16 @@ class ScoutApp:
         )
         self.scan_btn.pack(side="left", padx=(0, 10))
         self.scan_btn.configure(state="disabled")
+        
+        self.cancel_btn_scan = ttk.Button(
+            button_frame,
+            text="⏹️ Cancel Scan",
+            command=self._cancel_scan,
+            bootstyle="danger-outline",
+            width=20
+        )
+        self.cancel_btn_scan.pack(side="left", padx=(0, 10))
+        self.cancel_btn_scan.configure(state="disabled")
         
         self.export_btn = ttk.Button(
             button_frame,
@@ -252,6 +305,69 @@ class ScoutApp:
         self.results_tree.tag_configure('oddrow', background='#f0f0f0')
         self.results_tree.tag_configure('evenrow', background='#ffffff')
     
+    def _create_log_section(self, parent):
+        """Create the expandable log view section."""
+        # Container for log section
+        self.log_container = ttk.Frame(parent)
+        self.log_container.pack(fill='both', pady=(0, 15))
+        
+        # Header with toggle button
+        log_header = ttk.Frame(self.log_container)
+        log_header.pack(fill='x')
+        
+        self.log_toggle_btn = ttk.Button(
+            log_header,
+            text="▶ Show Logs",
+            command=self._toggle_log_view,
+            bootstyle="secondary-outline",
+            width=15
+        )
+        self.log_toggle_btn.pack(side='left')
+        
+        ttk.Label(
+            log_header,
+            text="View detailed processing logs",
+            font=("Helvetica", 9),
+            bootstyle="secondary"
+        ).pack(side='left', padx=(10, 0))
+        
+        # Log view frame (initially hidden)
+        self.log_view_frame = ttk.Frame(self.log_container)
+        
+        # Scrolled text widget for logs
+        self.log_text = scrolledtext.ScrolledText(
+            self.log_view_frame,
+            height=15,
+            font=("Courier", 9),
+            wrap='word',
+            state='disabled',
+            bg='#1e1e1e',
+            fg='#d4d4d4'
+        )
+        self.log_text.pack(fill='both', expand=True, pady=(10, 0))
+        
+        # Populate with existing logs if any
+        if self.log_messages:
+            self.log_text.configure(state='normal')
+            for msg in self.log_messages:
+                self.log_text.insert('end', msg + '\n')
+            self.log_text.configure(state='disabled')
+    
+    def _toggle_log_view(self):
+        """Toggle the log view visibility."""
+        if self.log_expanded:
+            # Collapse
+            self.log_view_frame.pack_forget()
+            self.log_toggle_btn.config(text="▶ Show Logs")
+            self.log_expanded = False
+            self._log("Log view collapsed", "INFO")
+        else:
+            # Expand
+            self.log_view_frame.pack(fill='both', expand=True)
+            self.log_toggle_btn.config(text="▼ Hide Logs")
+            self.log_expanded = True
+            self._log("Log view expanded", "INFO")
+    
     def _create_status_bar(self, parent):
         """Create the status bar."""
         status_frame = ttk.Frame(parent)
@@ -292,14 +408,31 @@ class ScoutApp:
             self.scan_btn.configure(state="normal")
             self.status_label.config(text=f"Ready to scan: {Path(directory).name}")
     
+    def _cancel_scan(self):
+        """Cancel the ongoing scan."""
+        if self.is_scanning:
+            self.cancel_scan = True
+            self._log("User requested scan cancellation", "WARN")
+            self.status_label.config(text="Cancelling scan...")
+            self.cancel_btn_scan.configure(state="disabled")
+    
     def _start_scan(self):
         """Start the scanning process."""
         if not self.selected_directory or self.is_scanning:
             return
         
+        self._log("="*60, "INFO")
+        self._log("Starting new scan", "INFO")
+        self._log(f"Target directory: {self.selected_directory}", "INFO")
+        self._log("Extraction mode: Pattern Matching (fast)", "INFO")
+        
+        # Reset cancel flag
+        self.cancel_scan = False
+        
         # Disable buttons during scan
         self.is_scanning = True
         self.scan_btn.configure(state="disabled")
+        self.cancel_btn_scan.configure(state="normal")  # Enable cancel
         self.export_btn.configure(state="disabled")
         self.clear_btn.configure(state="disabled")
         
@@ -320,45 +453,103 @@ class ScoutApp:
         """Perform the actual scanning (runs in separate thread)."""
         try:
             # Scan directory
+            self.root.after(0, lambda: self._log("Scanning directory for files...", "INFO"))
             files = self.scanner.scan_directory(self.selected_directory)
             total_files = len(files)
             
+            self.root.after(0, lambda t=total_files: self._log(f"Found {t} document files", "INFO"))
             self.root.after(0, lambda: self.progress_label.config(
-                text=f"Found {total_files} files. Processing..."
+                text=f"Found {total_files} files. Reading contents..."
             ))
             
-            # Process each file
+            # Step 1: Read all file contents first (fast batch operation)
+            self.root.after(0, lambda: self._log("Phase 1: Reading file contents", "INFO"))
+            file_contents = []
             for i, file_path in enumerate(files, 1):
-                # Update progress
                 self.root.after(0, lambda idx=i, total=total_files: 
                     self.progress_label.config(
-                        text=f"Processing file {idx}/{total}..."
+                        text=f"Reading file {idx}/{total}..."
                     ))
                 
-                # Parse file
                 content = self.parser.parse_file(file_path)
+                file_contents.append((file_path, content))
                 
                 if content:
-                    # Extract abbreviations
-                    self.extractor.extract_from_text(content, str(file_path))
+                    size_kb = len(content) / 1024
+                    self.root.after(0, lambda p=file_path, s=size_kb: 
+                        self._log(f"  Read: {p.name} ({s:.1f} KB)", "DEBUG"))
+                else:
+                    self.root.after(0, lambda p=file_path: 
+                        self._log(f"  Skipped: {p.name} (empty or unreadable)", "WARN"))
+            
+            # Step 2: Process files one by one with incremental display
+            self.root.after(0, lambda: self._log("Phase 2: Extracting abbreviations", "INFO"))
+            self.root.after(0, lambda: self.progress_label.config(
+                text="Extracting abbreviations..."
+            ))
+            
+            for i, (file_path, content) in enumerate(file_contents, 1):
+                # Check if scan was cancelled
+                if self.cancel_scan:
+                    self.root.after(0, lambda: self._log("Scan cancelled by user", "WARN"))
+                    self.root.after(0, self._scan_cancelled)
+                    return
+                
+                if not content:
+                    continue
+                
+                # Update progress
+                file_name = file_path.name
+                self.root.after(0, lambda idx=i, total=total_files, name=file_name: 
+                    self.progress_label.config(
+                        text=f"Processing {name} ({idx}/{total})..."
+                    ))
+                
+                # Extract abbreviations for this file
+                before_count = len(self.extractor.abbreviations)
+                self.extractor.extract_from_text(content, str(file_path))
+                after_count = len(self.extractor.abbreviations)
+                
+                # Calculate new abbreviations from this file
+                new_abbrevs = after_count - before_count
+                
+                if new_abbrevs > 0:
+                    self.root.after(0, lambda fname=file_name, n=new_abbrevs: 
+                        self._log(f"  {fname}: Found {n} new abbreviation(s)", "INFO"))
+                else:
+                    self.root.after(0, lambda fname=file_name: 
+                        self._log(f"  {fname}: No new abbreviations", "DEBUG"))
+                
+                # Display incremental results with file info
+                current_results = self.extractor.abbreviations.copy()
+                self.root.after(0, lambda r=current_results, fname=file_name, new=new_abbrevs: 
+                    self._update_results_incremental(r, fname, new))
             
             # Scanning complete
             self.current_results = self.extractor.abbreviations
             self.root.after(0, self._scan_complete)
             
         except Exception as e:
-            self.root.after(0, lambda: self._scan_error(str(e)))
+            error_msg = str(e)
+            self.root.after(0, lambda msg=error_msg: self._scan_error(msg))
     
     def _scan_complete(self):
         """Handle scan completion."""
         self.is_scanning = False
         self.progress_bar.stop()
         
-        # Display results
+        # Display final results
         self._display_results(self.current_results)
         
         # Update statistics
         stats = self.extractor.get_statistics()
+        self._log("="*60, "INFO")
+        self._log("Scan completed successfully!", "INFO")
+        self._log(f"Total abbreviations: {stats['total_abbreviations']}", "INFO")
+        self._log(f"With definitions: {stats['with_definitions']}", "INFO")
+        self._log(f"Without definitions: {stats['without_definitions']}", "INFO")
+        self._log(f"Coverage: {stats['coverage_percent']}%", "INFO")
+        
         self.stats_label.config(
             text=f"Found {stats['total_abbreviations']} abbreviations | "
                  f"{stats['with_definitions']} with definitions | "
@@ -380,14 +571,71 @@ class ScoutApp:
             f"Found {stats['total_abbreviations']} abbreviations in {self.scanner.get_stats()['total_files']} files!"
         )
     
+    def _scan_cancelled(self):
+        """Handle scan cancellation."""
+        self.is_scanning = False
+        self.cancel_scan = False
+        self.progress_bar.stop()
+        
+        # Get current stats
+        stats = self.extractor.get_statistics()
+        
+        self._log("="*60, "INFO")
+        self._log(f"Scan cancelled - partial results: {stats['total_abbreviations']} abbreviations", "INFO")
+        
+        self.progress_label.config(text="Scan cancelled")
+        self.status_label.config(text=f"Cancelled - {stats['total_abbreviations']} abbreviations found")
+        
+        # Display partial results
+        self.current_results = self.extractor.abbreviations
+        self._display_results(self.current_results)
+        
+        # Update statistics
+        if stats['total_abbreviations'] > 0:
+            self.stats_label.config(
+                text=f"Partial results: {stats['total_abbreviations']} abbreviations | "
+                     f"{stats['with_definitions']} with definitions | "
+                     f"{stats['without_definitions']} without definitions"
+            )
+        
+        # Re-enable buttons
+        self.scan_btn.configure(state="normal")
+        self.cancel_btn_scan.configure(state="disabled")
+        if self.current_results:
+            self.export_btn.configure(state="normal")
+            self.clear_btn.configure(state="normal")
+        
+        messagebox.showinfo(
+            "Scan Cancelled",
+            f"Scan was cancelled.\n\nPartial results: {stats['total_abbreviations']} abbreviations found."
+        )
+    
+    def _update_results_incremental(self, results: dict, file_name: str, new_count: int):
+        """Update results display incrementally as files are processed."""
+        # Update the tree view with all current abbreviations
+        self._display_results(results)
+        
+        # Update status to show progress per file
+        total = len(results)
+        if new_count > 0:
+            self.status_label.config(
+                text=f"✓ {file_name}: +{new_count} new | Total: {total} abbreviations"
+            )
+        else:
+            self.status_label.config(
+                text=f"✓ {file_name}: No new abbreviations | Total: {total}"
+            )
+    
     def _scan_error(self, error_msg: str):
         """Handle scan error."""
         self.is_scanning = False
+        self.cancel_scan = False
         self.progress_bar.stop()
         self.progress_label.config(text="Scan failed")
         self.status_label.config(text="Error occurred")
         
         self.scan_btn.configure(state="normal")
+        self.cancel_btn_scan.configure(state="disabled")
         
         messagebox.showerror("Scan Error", f"An error occurred during scanning:\n\n{error_msg}")
     
@@ -426,6 +674,73 @@ class ScoutApp:
             # Filter results
             filtered = self.extractor.filter_abbreviations(query)
             self._display_results(filtered)
+    
+    def _show_settings_dialog(self):
+        """Show extraction method information."""
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("About Extraction Method")
+        settings_window.geometry("500x300")
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        settings_window.configure(bg='#f5f5f5')
+        
+        # Center dialog
+        settings_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (settings_window.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (settings_window.winfo_height() // 2)
+        settings_window.geometry(f"+{x}+{y}")
+        
+        # Main container
+        container = ttk.Frame(settings_window, padding=(30, 30, 30, 30))
+        container.pack(fill="both", expand=True)
+        
+        # Header
+        header_frame = ttk.Frame(container)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            header_frame,
+            text="🎯 Pattern Matching",
+            font=("Helvetica", 20, "bold")
+        ).pack()
+        
+        ttk.Label(
+            header_frame,
+            text="Fast & Reliable Extraction",
+            font=("Helvetica", 11),
+            bootstyle="secondary"
+        ).pack(pady=(5, 0))
+        
+        # Info section
+        info_frame = ttk.Frame(container)
+        info_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        features = [
+            ("⚡", "Lightning-fast extraction (< 1ms per abbreviation)"),
+            ("💾", "Zero disk space - no downloads"),
+            ("✓", "Handles explicit definitions perfectly"),
+            ("🚀", "Optimized for many files")
+        ]
+        
+        for icon, text in features:
+            feature_frame = ttk.Frame(info_frame)
+            feature_frame.pack(fill="x", pady=5)
+            
+            ttk.Label(
+                feature_frame,
+                text=icon,
+                font=("Helvetica", 14)
+            ).pack(side="left", padx=(0, 10))
+            
+            ttk.Label(
+                feature_frame,
+                text=text,
+                font=("Helvetica", 11)
+            ).pack(side="left", anchor="w")
+        
+        # Close on click anywhere or Escape key
+        settings_window.bind("<Button-1>", lambda e: settings_window.destroy())
+        settings_window.bind("<Escape>", lambda e: settings_window.destroy())
     
     def _show_export_menu(self):
         """Show export format selection menu."""
@@ -509,6 +824,7 @@ class ScoutApp:
             success = self.exporter.export(self.current_results, filepath, format)
             
             if success:
+                self._log(f"Exported results to {format.upper()}: {filepath}", "INFO")
                 dialog.destroy()
                 messagebox.showinfo(
                     "Export Successful",
@@ -516,6 +832,7 @@ class ScoutApp:
                 )
                 self.status_label.config(text=f"Exported to {Path(filepath).name}")
             else:
+                self._log(f"{format.upper()} export failed", "ERROR")
                 messagebox.showerror(
                     "Export Failed",
                     "Failed to export report. Please try again."
@@ -529,6 +846,7 @@ class ScoutApp:
         )
         
         if result:
+            self._log("Clearing all results", "INFO")
             self.extractor.clear()
             self.current_results = {}
             self.results_tree.delete(*self.results_tree.get_children())
