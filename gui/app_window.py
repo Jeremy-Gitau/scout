@@ -27,6 +27,7 @@ class ScoutApp:
         
         # State variables (must be set before initializing extractor)
         self.selected_directory: Optional[str] = None
+        self.selected_file: Optional[str] = None
         self.is_scanning = False
         self.cancel_scan = False  # Flag to cancel ongoing scan
         self.current_results = {}
@@ -192,6 +193,15 @@ class ScoutApp:
             width=15
         )
         select_btn.pack(side="right", padx=(10, 0))
+        
+        select_file_btn = ttk.Button(
+            dir_frame,
+            text="📄 Select File",
+            command=self._select_file,
+            bootstyle="success-outline",
+            width=15
+        )
+        select_file_btn.pack(side="right", padx=(10, 0))
         
         # === ABBREVIATION MODE CONTROLS ===
         self.abbrev_controls = ttk.Frame(inner_frame)
@@ -623,6 +633,7 @@ class ScoutApp:
         
         if directory:
             self.selected_directory = directory
+            self.selected_file = None
             # Truncate path if too long
             display_path = directory
             if len(display_path) > 60:
@@ -632,6 +643,33 @@ class ScoutApp:
             self.scan_btn.configure(state="normal")
             self.scan_duplicates_btn.configure(state="normal")
             self.status_label.config(text=f"Ready to scan: {Path(directory).name}")
+    
+    def _select_file(self):
+        
+        file_path = filedialog.askopenfilename(
+            title="Select Document File",
+            initialdir=str(Path.home()),
+            filetypes=[
+                ("All Supported", "*.txt *.pdf *.docx *.doc"),
+                ("Text Files", "*.txt"),
+                ("PDF Files", "*.pdf"),
+                ("Word Documents", "*.docx *.doc"),
+                ("All Files", "*.*")
+            ]
+        )
+        
+        if file_path:
+            self.selected_file = file_path
+            self.selected_directory = None
+            # Truncate path if too long
+            display_path = file_path
+            if len(display_path) > 60:
+                display_path = "..." + display_path[-57:]
+            
+            self.dir_label.config(text=f"📄 {display_path}")
+            self.scan_btn.configure(state="normal")
+            self.scan_duplicates_btn.configure(state="disabled")
+            self.status_label.config(text=f"Ready to scan: {Path(file_path).name}")
     
     def _switch_mode(self, mode: str):
         if self.is_scanning or self.is_scanning_duplicates:
@@ -723,12 +761,17 @@ class ScoutApp:
     
     def _start_scan(self):
         
-        if not self.selected_directory or self.is_scanning:
+        if (not self.selected_directory and not self.selected_file) or self.is_scanning:
             return
         
         self._log("="*60, "INFO")
         self._log("Starting new scan", "INFO")
-        self._log(f"Target directory: {self.selected_directory}", "INFO")
+        
+        if self.selected_file:
+            self._log(f"Target file: {self.selected_file}", "INFO")
+        else:
+            self._log(f"Target directory: {self.selected_directory}", "INFO")
+        
         mode = "TextBlob Enhanced" if self.use_textblob else "Fast Pattern Matching"
         self._log(f"Extraction mode: {mode}", "INFO")
         
@@ -761,14 +804,22 @@ class ScoutApp:
     def _perform_scan(self):
         
         try:
-            # Scan directory
-            self.root.after(0, lambda: self._log("Scanning directory for files...", "INFO"))
-            files = self.scanner.scan_directory(self.selected_directory)
-            total_files = len(files)
+            # Determine if scanning a file or directory
+            if self.selected_file:
+                # Single file scan
+                self.root.after(0, lambda: self._log("Processing single file...", "INFO"))
+                file_path = Path(self.selected_file)
+                files = [file_path]
+                total_files = 1
+            else:
+                # Directory scan
+                self.root.after(0, lambda: self._log("Scanning directory for files...", "INFO"))
+                files = self.scanner.scan_directory(self.selected_directory)
+                total_files = len(files)
             
-            self.root.after(0, lambda t=total_files: self._log(f"Found {t} document files", "INFO"))
+            self.root.after(0, lambda t=total_files: self._log(f"Found {t} document file(s)", "INFO"))
             self.root.after(0, lambda: self.progress_label.config(
-                text=f"Found {total_files} files. Reading contents..."
+                text=f"Found {total_files} file(s). Reading contents..."
             ))
             
             # Step 1: Read all file contents first (fast batch operation)
