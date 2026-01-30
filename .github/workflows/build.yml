@@ -39,10 +39,10 @@ jobs:
           --hidden-import=imagehash `
           --hidden-import=numpy `
           --hidden-import=scipy `
+          --hidden-import=spacy `
+          --hidden-import=transformers `
+          --hidden-import=torch `
           --hidden-import=openpyxl `
-          --exclude-module=torch `
-          --exclude-module=transformers `
-          --exclude-module=spacy `
           --collect-all PIL `
           --collect-all imagehash `
           main.py
@@ -80,10 +80,10 @@ jobs:
           --hidden-import=imagehash \
           --hidden-import=numpy \
           --hidden-import=scipy \
+          --hidden-import=spacy \
+          --hidden-import=transformers \
+          --hidden-import=torch \
           --hidden-import=openpyxl \
-          --exclude-module=torch \
-          --exclude-module=transformers \
-          --exclude-module=spacy \
           --collect-all PIL \
           --collect-all imagehash \
           main.py
@@ -130,12 +130,12 @@ jobs:
           --hidden-import=transformers \
           --hidden-import=torch \
           --hidden-import=openpyxl \
-          --collect-all PIopenpyxl \
-          --exclude-module=torch \
-          --exclude-module=transformers \
-          --exclude-module=spacy \
           --collect-all PIL \
-          --collect-all imagehashifact@v4
+          --collect-all imagehash \
+          main.py
+    
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
       with:
         name: Scout-Linux
         path: dist/Scout
