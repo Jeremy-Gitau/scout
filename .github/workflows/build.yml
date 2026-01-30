@@ -191,19 +191,13 @@ jobs:
         mv ./artifacts/macos/Scout ./artifacts/macos/Scout-macOS
         mv ./artifacts/linux/Scout ./artifacts/linux/Scout-Linux
     
-    - name: Compress artifacts
-      run: |
-        cd ./artifacts/windows && zip Scout-Windows.zip Scout.exe
-        cd ../../artifacts/macos && zip Scout-macOS.zip Scout-macOS
-        cd ../../artifacts/linux && tar -czf Scout-Linux.tar.gz Scout-Linux
-    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/windows/Scout-Windows.zip
-          ./artifacts/macos/Scout-macOS.zip
-          ./artifacts/linux/Scout-Linux.tar.gz
+          ./artifacts/windows/Scout.exe
+          ./artifacts/macos/Scout-macOS
+          ./artifacts/linux/Scout-Linux
         body: |
           ## Scout v1.4.0 Release
           
@@ -218,14 +212,14 @@ jobs:
           - 🔧 Auto-installation of AI features on first launch
           
           ### Downloads:
-          - **Windows**: Scout-Windows.zip (~50MB)
-          - **macOS**: Scout-macOS.zip (~40MB)
-          - **Linux**: Scout-Linux.tar.gz (~45MB)
+          - **Windows**: Scout.exe (~50MB)
+          - **macOS**: Scout-macOS (~40MB)
+          - **Linux**: Scout-Linux (~45MB)
           
           ### Installation:
-          - **Windows**: Extract Scout-Windows.zip and run Scout.exe
-          - **macOS**: Extract Scout-macOS.zip, make executable: `chmod +x Scout-macOS`, then run
-          - **Linux**: Extract Scout-Linux.tar.gz: `tar -xzf Scout-Linux.tar.gz`, make executable: `chmod +x Scout-Linux`, then run
+          - **Windows**: Download and run Scout.exe
+          - **macOS**: Download Scout-macOS, make executable: `chmod +x Scout-macOS`, then run
+          - **Linux**: Download Scout-Linux, make executable: `chmod +x Scout-Linux`, then run
           
           ### Note on AI Features:
           These executables include **basic extraction features** for fast scanning and multi-format support.
