@@ -2,6 +2,7 @@ name: Build Scout for All Platforms
 
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -42,22 +43,43 @@ jobs:
     
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --windowed --name Scout `
-          --hidden-import=PIL `
-          --hidden-import=PIL._imaging `
-          --hidden-import=PIL.Image `
-          --hidden-import=PIL.ImageTk `
-          --hidden-import=PIL._tkinter_finder `
-          --hidden-import=imagehash `
-          --hidden-import=numpy `
-          --hidden-import=scipy `
-          --hidden-import=openpyxl `
-          --exclude-module=torch `
-          --exclude-module=transformers `
-          --exclude-module=spacy `
-          --collect-all PIL `
-          --collect-all imagehash `
-          main.py
+        if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "True") {
+          # Tag build - exclude AI libraries (small build)
+          pyinstaller --onefile --windowed --name Scout `
+            --hidden-import=PIL `
+            --hidden-import=PIL._imaging `
+            --hidden-import=PIL.Image `
+            --hidden-import=PIL.ImageTk `
+            --hidden-import=PIL._tkinter_finder `
+            --hidden-import=imagehash `
+            --hidden-import=numpy `
+            --hidden-import=scipy `
+            --hidden-import=openpyxl `
+            --exclude-module=torch `
+            --exclude-module=transformers `
+            --exclude-module=spacy `
+            --collect-all PIL `
+            --collect-all imagehash `
+            main.py
+        } else {
+          # Main branch build - include AI libraries (full build)
+          pyinstaller --onefile --windowed --name Scout `
+            --hidden-import=PIL `
+            --hidden-import=PIL._imaging `
+            --hidden-import=PIL.Image `
+            --hidden-import=PIL.ImageTk `
+            --hidden-import=PIL._tkinter_finder `
+            --hidden-import=imagehash `
+            --hidden-import=numpy `
+            --hidden-import=scipy `
+            --hidden-import=spacy `
+            --hidden-import=transformers `
+            --hidden-import=torch `
+            --hidden-import=openpyxl `
+            --collect-all PIL `
+            --collect-all imagehash `
+            main.py
+        }
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
@@ -87,22 +109,43 @@ jobs:
     
     - name: Build macOS executable
       run: |
-        pyinstaller --onefile --windowed --name Scout \
-          --hidden-import=PIL \
-          --hidden-import=PIL._imaging \
-          --hidden-import=PIL.Image \
-          --hidden-import=PIL.ImageTk \
-          --hidden-import=PIL._tkinter_finder \
-          --hidden-import=imagehash \
-          --hidden-import=numpy \
-          --hidden-import=scipy \
-          --hidden-import=openpyxl \
-          --exclude-module=torch \
-          --exclude-module=transformers \
-          --exclude-module=spacy \
-          --collect-all PIL \
-          --collect-all imagehash \
-          main.py
+        if [[ "${{ startsWith(github.ref, 'refs/tags/') }}" == "true" ]]; then
+          # Tag build - exclude AI libraries (small build)
+          pyinstaller --onefile --windowed --name Scout \
+            --hidden-import=PIL \
+            --hidden-import=PIL._imaging \
+            --hidden-import=PIL.Image \
+            --hidden-import=PIL.ImageTk \
+            --hidden-import=PIL._tkinter_finder \
+            --hidden-import=imagehash \
+            --hidden-import=numpy \
+            --hidden-import=scipy \
+            --hidden-import=openpyxl \
+            --exclude-module=torch \
+            --exclude-module=transformers \
+            --exclude-module=spacy \
+            --collect-all PIL \
+            --collect-all imagehash \
+            main.py
+        else
+          # Main branch build - include AI libraries (full build)
+          pyinstaller --onefile --windowed --name Scout \
+            --hidden-import=PIL \
+            --hidden-import=PIL._imaging \
+            --hidden-import=PIL.Image \
+            --hidden-import=PIL.ImageTk \
+            --hidden-import=PIL._tkinter_finder \
+            --hidden-import=imagehash \
+            --hidden-import=numpy \
+            --hidden-import=scipy \
+            --hidden-import=spacy \
+            --hidden-import=transformers \
+            --hidden-import=torch \
+            --hidden-import=openpyxl \
+            --collect-all PIL \
+            --collect-all imagehash \
+            main.py
+        fi
     
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v4
@@ -137,22 +180,43 @@ jobs:
     
     - name: Build Linux executable
       run: |
-        pyinstaller --onefile --name Scout \
-          --hidden-import=PIL \
-          --hidden-import=PIL._imaging \
-          --hidden-import=PIL.Image \
-          --hidden-import=PIL.ImageTk \
-          --hidden-import=PIL._tkinter_finder \
-          --hidden-import=imagehash \
-          --hidden-import=numpy \
-          --hidden-import=scipy \
-          --hidden-import=openpyxl \
-          --exclude-module=torch \
-          --exclude-module=transformers \
-          --exclude-module=spacy \
-          --collect-all PIL \
-          --collect-all imagehash \
-          main.py
+        if [[ "${{ startsWith(github.ref, 'refs/tags/') }}" == "true" ]]; then
+          # Tag build - exclude AI libraries (small build)
+          pyinstaller --onefile --name Scout \
+            --hidden-import=PIL \
+            --hidden-import=PIL._imaging \
+            --hidden-import=PIL.Image \
+            --hidden-import=PIL.ImageTk \
+            --hidden-import=PIL._tkinter_finder \
+            --hidden-import=imagehash \
+            --hidden-import=numpy \
+            --hidden-import=scipy \
+            --hidden-import=openpyxl \
+            --exclude-module=torch \
+            --exclude-module=transformers \
+            --exclude-module=spacy \
+            --collect-all PIL \
+            --collect-all imagehash \
+            main.py
+        else
+          # Main branch build - include AI libraries (full build)
+          pyinstaller --onefile --name Scout \
+            --hidden-import=PIL \
+            --hidden-import=PIL._imaging \
+            --hidden-import=PIL.Image \
+            --hidden-import=PIL.ImageTk \
+            --hidden-import=PIL._tkinter_finder \
+            --hidden-import=imagehash \
+            --hidden-import=numpy \
+            --hidden-import=scipy \
+            --hidden-import=spacy \
+            --hidden-import=transformers \
+            --hidden-import=torch \
+            --hidden-import=openpyxl \
+            --collect-all PIL \
+            --collect-all imagehash \
+            main.py
+        fi
     
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
@@ -191,13 +255,71 @@ jobs:
         mv ./artifacts/macos/Scout ./artifacts/macos/Scout-macOS
         mv ./artifacts/linux/Scout ./artifacts/linux/Scout-Linux
     
+    - name: Compress artifacts if larger than 100MB
+      run: |
+        # Check Windows executable size
+        WIN_SIZE=$(stat -f%z ./artifacts/windows/Scout.exe 2>/dev/null || stat -c%s ./artifacts/windows/Scout.exe)
+        if [ $WIN_SIZE -gt 104857600 ]; then
+          echo "Windows executable is $(($WIN_SIZE/1024/1024))MB, compressing..."
+          cd ./artifacts/windows && zip Scout-Windows.zip Scout.exe && cd ../..
+          echo "WIN_COMPRESSED=true" >> $GITHUB_ENV
+        else
+          echo "Windows executable is $(($WIN_SIZE/1024/1024))MB, skipping compression"
+          echo "WIN_COMPRESSED=false" >> $GITHUB_ENV
+        fi
+        
+        # Check macOS executable size
+        MAC_SIZE=$(stat -f%z ./artifacts/macos/Scout-macOS 2>/dev/null || stat -c%s ./artifacts/macos/Scout-macOS)
+        if [ $MAC_SIZE -gt 104857600 ]; then
+          echo "macOS executable is $(($MAC_SIZE/1024/1024))MB, compressing..."
+          cd ./artifacts/macos && zip Scout-macOS.zip Scout-macOS && cd ../..
+          echo "MAC_COMPRESSED=true" >> $GITHUB_ENV
+        else
+          echo "macOS executable is $(($MAC_SIZE/1024/1024))MB, skipping compression"
+          echo "MAC_COMPRESSED=false" >> $GITHUB_ENV
+        fi
+        
+        # Check Linux executable size
+        LIN_SIZE=$(stat -f%z ./artifacts/linux/Scout-Linux 2>/dev/null || stat -c%s ./artifacts/linux/Scout-Linux)
+        if [ $LIN_SIZE -gt 104857600 ]; then
+          echo "Linux executable is $(($LIN_SIZE/1024/1024))MB, compressing..."
+          cd ./artifacts/linux && tar -czf Scout-Linux.tar.gz Scout-Linux && cd ../..
+          echo "LIN_COMPRESSED=true" >> $GITHUB_ENV
+        else
+          echo "Linux executable is $(($LIN_SIZE/1024/1024))MB, skipping compression"
+          echo "LIN_COMPRESSED=false" >> $GITHUB_ENV
+        fi
+    
+    - name: Prepare release files
+      id: prepare-files
+      run: |
+        FILES=""
+        if [ "${{ env.WIN_COMPRESSED }}" == "true" ]; then
+          FILES="${FILES}./artifacts/windows/Scout-Windows.zip"$'\n'
+        else
+          FILES="${FILES}./artifacts/windows/Scout.exe"$'\n'
+        fi
+        
+        if [ "${{ env.MAC_COMPRESSED }}" == "true" ]; then
+          FILES="${FILES}./artifacts/macos/Scout-macOS.zip"$'\n'
+        else
+          FILES="${FILES}./artifacts/macos/Scout-macOS"$'\n'
+        fi
+        
+        if [ "${{ env.LIN_COMPRESSED }}" == "true" ]; then
+          FILES="${FILES}./artifacts/linux/Scout-Linux.tar.gz"$'\n'
+        else
+          FILES="${FILES}./artifacts/linux/Scout-Linux"$'\n'
+        fi
+        
+        echo "files<<EOF" >> $GITHUB_OUTPUT
+        echo "$FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          ./artifacts/windows/Scout.exe
-          ./artifacts/macos/Scout-macOS
-          ./artifacts/linux/Scout-Linux
+        files: ${{ steps.prepare-files.outputs.files }}
         body: |
           ## Scout v1.4.0 Release
           
@@ -212,14 +334,14 @@ jobs:
           - 🔧 Auto-installation of AI features on first launch
           
           ### Downloads:
-          - **Windows**: Scout.exe (~50MB)
-          - **macOS**: Scout-macOS (~40MB)
-          - **Linux**: Scout-Linux (~45MB)
+          - **Windows**: Scout-Windows.zip (~50MB)
+          - **macOS**: Scout-macOS.zip (~40MB)
+          - **Linux**: Scout-Linux.tar.gz (~45MB)
           
           ### Installation:
-          - **Windows**: Download and run Scout.exe
-          - **macOS**: Download Scout-macOS, make executable: `chmod +x Scout-macOS`, then run
-          - **Linux**: Download Scout-Linux, make executable: `chmod +x Scout-Linux`, then run
+          - **Windows**: Extract Scout-Windows.zip and run Scout.exe
+          - **macOS**: Extract Scout-macOS.zip, make executable: `chmod +x Scout-macOS`, then run
+          - **Linux**: Extract Scout-Linux.tar.gz: `tar -xzf Scout-Linux.tar.gz`, make executable: `chmod +x Scout-Linux`, then run
           
           ### Note on AI Features:
           These executables include **basic extraction features** for fast scanning and multi-format support.
