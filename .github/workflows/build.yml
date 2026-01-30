@@ -166,13 +166,19 @@ jobs:
         mv ./artifacts/macos/Scout ./artifacts/macos/Scout-macOS
         mv ./artifacts/linux/Scout ./artifacts/linux/Scout-Linux
     
+    - name: Compress artifacts
+      run: |
+        cd ./artifacts/windows && zip Scout-Windows.zip Scout.exe
+        cd ../../artifacts/macos && zip Scout-macOS.zip Scout-macOS
+        cd ../../artifacts/linux && tar -czf Scout-Linux.tar.gz Scout-Linux
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./artifacts/windows/Scout.exe
-          ./artifacts/macos/Scout-macOS
-          ./artifacts/linux/Scout-Linux
+          ./artifacts/windows/Scout-Windows.zip
+          ./artifacts/macos/Scout-macOS.zip
+          ./artifacts/linux/Scout-Linux.tar.gz
         body: |
           ## Scout v1.4.0 Release
           
@@ -180,38 +186,30 @@ jobs:
           
           ### What's New in v1.4.0:
           - ✨ 8 extraction improvements (spaCy NER, BERT, confidence scoring)
-          - 🚀 Concurrent task management (run multiple scans)
-          - 📂 16 file format support (Excel, CSV, JSON, HTML, Markdown, etc.)
-          - 🎯 Enhanced pattern matching (dotted, hyphenated)
-          - 📊 Real-time task progress tracking
-          
-          ### Downloads:
-          - **Windows**: Scout.exe
-          - ⚡ Concurrent task management (run multiple scans)
-          - 📂 16 file format support (Excel, CSV, JSON, HTML, Markdown, etc.)
+          - � 16 file format support (Excel, CSV, JSON, HTML, Markdown, etc.)
           - 🎯 Enhanced pattern matching (dotted, hyphenated abbreviations)
-          - 📊 Real-time task progress tracking
-          - 🪟 Popup task viewer for cleaner UI
+          - 📊 Batch export with limit and split options
+          - 📈 Determinate progress bar with file count (e.g., 2/67 documents)
+          - 🔧 Auto-installation of AI features on first launch
           
           ### Downloads:
-          - **Windows**: Scout.exe (~50MB)
-          - **macOS**: Scout-macOS (~40MB)
-          - **Linux**: Scout-Linux (~45MB)
+          - **Windows**: Scout-Windows.zip (~50MB)
+          - **macOS**: Scout-macOS.zip (~40MB)
+          - **Linux**: Scout-Linux.tar.gz (~45MB)
           
           ### Installation:
-          - **Windows**: Download and run Scout.exe
-          - **macOS**: Download Scout-macOS, make executable: `chmod +x Scout-macOS`, then run
-          - **Linux**: Download Scout-Linux, make executable: `chmod +x Scout-Linux`, then run
+          - **Windows**: Extract Scout-Windows.zip and run Scout.exe
+          - **macOS**: Extract Scout-macOS.zip, make executable: `chmod +x Scout-macOS`, then run
+          - **Linux**: Extract Scout-Linux.tar.gz: `tar -xzf Scout-Linux.tar.gz`, make executable: `chmod +x Scout-Linux`, then run
           
           ### Note on AI Features:
           These executables include **basic extraction features** for fast scanning and multi-format support.
           
           **For full AI features** (spaCy NER, BERT embeddings, confidence scoring):
-          1. Clone the repository
-          2. Install dependencies: `pip install -r requirements.txt`
-          3. Download spaCy model: `python -m spacy download en_core_web_sm`
-          4. Run: `python main.py`
+          - Run from source with `pip install -r requirements.txt`
+          - AI features provide 95% precision vs 80% for basic pattern matching
           
-          AI features provide 95% precision vs 80% for basic pattern matching.
-          
-          See [Release Notes](https://github.com/Jeremy-Gitau
+          ### Requirements:
+          - No additional software needed
+          - Basic extraction works out of the box
+          - Optional: Install Python + dependencies for AI features
