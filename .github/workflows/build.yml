@@ -39,10 +39,10 @@ jobs:
           --hidden-import=imagehash `
           --hidden-import=numpy `
           --hidden-import=scipy `
-          --hidden-import=spacy `
-          --hidden-import=transformers `
-          --hidden-import=torch `
           --hidden-import=openpyxl `
+          --exclude-module=torch `
+          --exclude-module=transformers `
+          --exclude-module=spacy `
           --collect-all PIL `
           --collect-all imagehash `
           main.py
@@ -80,10 +80,10 @@ jobs:
           --hidden-import=imagehash \
           --hidden-import=numpy \
           --hidden-import=scipy \
-          --hidden-import=spacy \
-          --hidden-import=transformers \
-          --hidden-import=torch \
           --hidden-import=openpyxl \
+          --exclude-module=torch \
+          --exclude-module=transformers \
+          --exclude-module=spacy \
           --collect-all PIL \
           --collect-all imagehash \
           main.py
@@ -126,10 +126,10 @@ jobs:
           --hidden-import=imagehash \
           --hidden-import=numpy \
           --hidden-import=scipy \
-          --hidden-import=spacy \
-          --hidden-import=transformers \
-          --hidden-import=torch \
           --hidden-import=openpyxl \
+          --exclude-module=torch \
+          --exclude-module=transformers \
+          --exclude-module=spacy \
           --collect-all PIL \
           --collect-all imagehash \
           main.py
