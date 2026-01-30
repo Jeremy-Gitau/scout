@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Optional
 import re
+import csv
+import json
 
 class Parser:
     def __init__(self):
@@ -19,6 +21,22 @@ class Parser:
                 return self._parse_docx(file_path)
             elif extension == '.pdf':
                 return self._parse_pdf(file_path)
+            elif extension in ['.xlsx', '.xls']:
+                return self._parse_excel(file_path)
+            elif extension in ['.csv', '.tsv']:
+                return self._parse_csv(file_path, extension)
+            elif extension == '.rtf':
+                return self._parse_rtf(file_path)
+            elif extension == '.odt':
+                return self._parse_odt(file_path)
+            elif extension in ['.md', '.markdown']:
+                return self._parse_txt(file_path)  # Markdown is plain text
+            elif extension in ['.html', '.htm']:
+                return self._parse_html(file_path)
+            elif extension == '.xml':
+                return self._parse_xml(file_path)
+            elif extension == '.json':
+                return self._parse_json(file_path)
             else:
                 return ""
         except Exception as e:
@@ -88,6 +106,148 @@ class Parser:
             return ""
         except Exception as e:
             print(f"Error parsing PDF {file_path}: {e}")
+            return ""
+    
+    def _parse_excel(self, file_path: Path) -> str:
+        try:
+            import openpyxl
+            
+            workbook = openpyxl.load_workbook(file_path, data_only=True)
+            full_text = []
+            
+            for sheet in workbook.worksheets:
+                full_text.append(f"Sheet: {sheet.title}")
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = ' '.join(str(cell) for cell in row if cell is not None)
+                    if row_text.strip():
+                        full_text.append(row_text)
+            
+            return '\n'.join(full_text)
+        except ImportError:
+            print("openpyxl not installed. Install with: pip install openpyxl")
+            return ""
+        except Exception as e:
+            print(f"Error parsing Excel {file_path}: {e}")
+            return ""
+    
+    def _parse_csv(self, file_path: Path, extension: str) -> str:
+        try:
+            delimiter = '\t' if extension == '.tsv' else ','
+            full_text = []
+            
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                reader = csv.reader(f, delimiter=delimiter)
+                for row in reader:
+                    row_text = ' '.join(str(cell) for cell in row if cell)
+                    if row_text.strip():
+                        full_text.append(row_text)
+            
+            return '\n'.join(full_text)
+        except Exception as e:
+            print(f"Error parsing CSV/TSV {file_path}: {e}")
+            return ""
+    
+    def _parse_rtf(self, file_path: Path) -> str:
+        try:
+            # Basic RTF parsing - strip RTF control words
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Remove RTF control words (basic approach)
+            content = re.sub(r'\\[a-z]+\d*\s?', ' ', content)
+            content = re.sub(r'[{}]', '', content)
+            content = re.sub(r'\s+', ' ', content)
+            
+            return content.strip()
+        except Exception as e:
+            print(f"Error parsing RTF {file_path}: {e}")
+            return ""
+    
+    def _parse_odt(self, file_path: Path) -> str:
+        try:
+            from zipfile import ZipFile
+            from xml.etree import ElementTree as ET
+            
+            full_text = []
+            with ZipFile(file_path) as odt_file:
+                content_xml = odt_file.read('content.xml')
+                tree = ET.fromstring(content_xml)
+                
+                # Extract all text nodes
+                for elem in tree.iter():
+                    if elem.text:
+                        full_text.append(elem.text)
+                    if elem.tail:
+                        full_text.append(elem.tail)
+            
+            return '\\n'.join(full_text)
+        except Exception as e:
+            print(f"Error parsing ODT {file_path}: {e}")
+            return ""
+    
+    def _parse_html(self, file_path: Path) -> str:
+        try:
+            from html.parser import HTMLParser
+            
+            class TextExtractor(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.text = []
+                
+                def handle_data(self, data):
+                    self.text.append(data)
+            
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            parser = TextExtractor()
+            parser.feed(content)
+            
+            return ' '.join(parser.text)
+        except Exception as e:
+            print(f"Error parsing HTML {file_path}: {e}")
+            return ""
+    
+    def _parse_xml(self, file_path: Path) -> str:
+        try:
+            from xml.etree import ElementTree as ET
+            
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            
+            full_text = []
+            for elem in root.iter():
+                if elem.text and elem.text.strip():
+                    full_text.append(elem.text)
+                if elem.tail and elem.tail.strip():
+                    full_text.append(elem.tail)
+            
+            return '\\n'.join(full_text)
+        except Exception as e:
+            print(f"Error parsing XML {file_path}: {e}")
+            return ""
+    
+    def _parse_json(self, file_path: Path) -> str:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Extract all string values recursively
+            def extract_strings(obj, strings=[]):
+                if isinstance(obj, dict):
+                    for value in obj.values():
+                        extract_strings(value, strings)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        extract_strings(item, strings)
+                elif isinstance(obj, str):
+                    strings.append(obj)
+                return strings
+            
+            text_data = extract_strings(data)
+            return '\\n'.join(text_data)
+        except Exception as e:
+            print(f"Error parsing JSON {file_path}: {e}")
             return ""
     
     @staticmethod

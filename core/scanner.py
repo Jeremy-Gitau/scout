@@ -4,7 +4,17 @@ from typing import List, Set
 
 class Scanner:
     # Supported file extensions
-    SUPPORTED_EXTENSIONS = {'.txt', '.pdf', '.docx', '.doc'}
+    SUPPORTED_EXTENSIONS = {
+        '.txt', '.pdf', '.docx', '.doc',  # Original formats
+        '.xlsx', '.xls',  # Excel
+        '.csv', '.tsv',  # Delimited text
+        '.rtf',  # Rich Text Format
+        '.odt',  # OpenDocument Text
+        '.md', '.markdown',  # Markdown
+        '.html', '.htm',  # HTML
+        '.xml',  # XML
+        '.json'  # JSON (for structured data)
+    }
     
     def __init__(self):
         self.files_found: List[Path] = []

@@ -1,6 +1,7 @@
 import re
+import requests
 from typing import Dict, List, Tuple, Optional
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 try:
     import nltk
@@ -48,11 +49,48 @@ except ImportError:
         'EVEN', 'NEW', 'WANT', 'BECAUSE', 'ANY', 'THESE', 'GIVE', 'DAY', 'MOST', 'US',
     }
 
+try:
+    import spacy
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        HAS_SPACY = True
+    except OSError:
+        HAS_SPACY = False
+        nlp = None
+        print("⚠ spaCy model not found. Install with: python -m spacy download en_core_web_sm")
+except ImportError:
+    HAS_SPACY = False
+    nlp = None
+    print("⚠ spaCy not installed. Some features disabled.")
+
+try:
+    from transformers import AutoTokenizer, AutoModel
+    import torch
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    model = AutoModel.from_pretrained("bert-base-uncased")
+    HAS_BERT = True
+except ImportError:
+    HAS_BERT = False
+    tokenizer = None
+    model = None
+    print("⚠ Transformers/BERT not installed. Semantic matching disabled.")
+except Exception as e:
+    HAS_BERT = False
+    tokenizer = None
+    model = None
+    print(f"⚠ BERT loading failed: {e}")
+
 class Extractor:
     
     
-    # Pattern for detecting abbreviations (2-10 uppercase letters, may include numbers)
+    # Pattern for standard abbreviations (2-10 uppercase letters, may include numbers)
     ABBREV_PATTERN = re.compile(r'\b[A-Z][A-Z0-9]{1,9}\b')
+    
+    # Pattern for dotted abbreviations (e.g., U.S.A., Ph.D.)
+    DOTTED_PATTERN = re.compile(r'\b[A-Z](?:\.[A-Z])+\.?\b')
+    
+    # Pattern for hyphenated abbreviations (e.g., UTF-8, X-Ray)
+    HYPHENATED_PATTERN = re.compile(r'\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b')
     
     # Domain-specific words to exclude beyond NLTK stopwords
     ADDITIONAL_EXCLUDES = {
@@ -94,14 +132,157 @@ class Extractor:
     def get_excluded_words(cls):
         return STOP_WORDS | cls.ADDITIONAL_EXCLUDES
     
-    def __init__(self, min_length: int = 2, max_length: int = 10):
+    def __init__(self, min_length: int = 2, max_length: int = 10, use_api: bool = False):
         self.min_length = min_length
         self.max_length = max_length
+        self.use_api = use_api
         self.abbreviations: Dict[str, dict] = {}
+        self.api_cache: Dict[str, Optional[str]] = {}
+    
+    def _is_named_entity(self, word: str, text: str) -> bool:
+        if not HAS_SPACY or not nlp:
+            return False
+        
+        try:
+            # Sample context around the word
+            pattern = rf'.{{0,100}}\b{re.escape(word)}\b.{{0,100}}'
+            match = re.search(pattern, text)
+            if not match:
+                return False
+            
+            doc = nlp(match.group(0))
+            for ent in doc.ents:
+                if word in ent.text:
+                    # Filter out ORG, PRODUCT, GPE (likely legitimate abbreviations)
+                    if ent.label_ in ['PERSON', 'NORP', 'FAC', 'LOC', 'EVENT', 'WORK_OF_ART', 'LAW', 'LANGUAGE']:
+                        return True
+            return False
+        except:
+            return False
+    
+    def _validate_with_api(self, abbrev: str) -> Optional[str]:
+        if not self.use_api:
+            return None
+        
+        if abbrev in self.api_cache:
+            return self.api_cache[abbrev]
+        
+        try:
+            # Acronym Finder API (free tier)
+            url = f"http://www.acronymfinder.com/api?term={abbrev}"
+            response = requests.get(url, timeout=3)
+            
+            if response.status_code == 200:
+                # Parse the API response (simplified - adjust based on actual API)
+                data = response.json() if response.headers.get('content-type') == 'application/json' else None
+                if data and isinstance(data, list) and len(data) > 0:
+                    definition = data[0].get('definition', None)
+                    self.api_cache[abbrev] = definition
+                    return definition
+        except:
+            pass
+        
+        self.api_cache[abbrev] = None
+        return None
+    
+    def _calculate_confidence_score(self, abbrev: str, definition: Optional[str], 
+                                     text: str, position: int) -> float:
+        score = 0.5  # Base score
+        
+        # Higher score if definition found
+        if definition:
+            score += 0.3
+            
+            # Check for explicit definition patterns
+            if re.search(rf'\bstands for\b.*{re.escape(definition)}', text, re.IGNORECASE):
+                score += 0.15
+            if re.search(rf'\bmeans\b.*{re.escape(definition)}', text, re.IGNORECASE):
+                score += 0.15
+            
+            # Use BERT semantic similarity if available
+            if HAS_BERT and tokenizer and model:
+                similarity = self._calculate_semantic_similarity(abbrev, definition)
+                if similarity > 0.7:
+                    score += 0.2
+                elif similarity > 0.5:
+                    score += 0.1
+        
+        # Higher score for first occurrence (likely introduced properly)
+        if position < len(text) * 0.2:  # First 20% of document
+            score += 0.1
+        
+        # Higher score if contains digits (technical abbreviations)
+        if any(c.isdigit() for c in abbrev):
+            score += 0.1
+        
+        # Higher score for short abbreviations (2-4 chars)
+        if 2 <= len(abbrev) <= 4:
+            score += 0.05
+        
+        # Lower score if too long (likely not abbreviation)
+        if len(abbrev) > 7:
+            score -= 0.2
+        
+        return min(1.0, max(0.0, score))
+    
+    def _calculate_semantic_similarity(self, abbrev: str, definition: str) -> float:
+        if not HAS_BERT or not tokenizer or not model:
+            return 0.0
+        
+        try:
+            # Get embeddings for abbreviation and definition
+            abbrev_embedding = self._get_bert_embedding(abbrev)
+            definition_embedding = self._get_bert_embedding(definition)
+            
+            # Calculate cosine similarity
+            similarity = torch.nn.functional.cosine_similarity(
+                abbrev_embedding, definition_embedding, dim=0
+            ).item()
+            
+            return max(0.0, similarity)
+        except:
+            return 0.0
+    
+    def _get_bert_embedding(self, text: str):
+        if not HAS_BERT or not tokenizer or not model:
+            return None
+        
+        # Tokenize and get embeddings
+        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        # Use mean pooling of last hidden state
+        embeddings = outputs.last_hidden_state.mean(dim=1).squeeze()
+        return embeddings
+    
+    def _is_in_glossary_section(self, text: str, abbrev: str) -> bool:
+        # Check if abbreviation appears in a glossary/abbreviations section
+        glossary_patterns = [
+            r'(?:glossary|abbreviations|acronyms|definitions)\s*\n',
+            r'(?:list of )?(?:abbreviations|acronyms)',
+            r'appendix.*(?:abbreviations|acronyms)',
+        ]
+        
+        for pattern in glossary_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                # Check if abbreviation appears within 500 chars after glossary header
+                glossary_start = match.end()
+                glossary_text = text[glossary_start:glossary_start + 500]
+                if abbrev in glossary_text:
+                    return True
+        
+        return False
     
     def _is_likely_abbreviation(self, word: str, text: str) -> bool:
         excluded = self.get_excluded_words()
         if word in excluded:
+            return False
+        
+        # Check if it's a named entity (filter out)
+        if self._is_named_entity(word, text):
             return False
         
         # Has numbers = likely abbreviation
@@ -119,6 +300,10 @@ class Extractor:
             if re.search(pattern, text):
                 return True
         
+        # Check if in glossary section
+        if self._is_in_glossary_section(text, word):
+            return True
+        
         # Short words (2-4 chars) are likely abbreviations
         if 2 <= len(word) <= 4:
             return True
@@ -128,12 +313,42 @@ class Extractor:
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:
         
-        # Find all potential abbreviations
-        matches = self.ABBREV_PATTERN.findall(text)
+        # Find all potential abbreviations using multiple patterns
+        matches = []
         
-        for abbrev in matches:
-            # Filter by length and likelihood
-            if not (self.min_length <= len(abbrev) <= self.max_length):
+        # Standard abbreviations
+        matches.extend([(m.group(), m.start()) for m in self.ABBREV_PATTERN.finditer(text)])
+        
+        # Dotted abbreviations (e.g., U.S.A., Ph.D.)
+        dotted_matches = self.DOTTED_PATTERN.findall(text)
+        for match in dotted_matches:
+            # Normalize by removing dots
+            normalized = match.replace('.', '')
+            if self.min_length <= len(normalized) <= self.max_length:
+                pos = text.find(match)
+                matches.append((normalized, pos))
+        
+        # Hyphenated abbreviations (e.g., UTF-8, X-Ray)
+        hyphenated_matches = self.HYPHENATED_PATTERN.findall(text)
+        for match in hyphenated_matches:
+            if self.min_length <= len(match.replace('-', '')) <= self.max_length:
+                pos = text.find(match)
+                matches.append((match, pos))
+        
+        # Count frequencies for filtering
+        abbrev_counts = Counter([m[0] for m in matches])
+        
+        for abbrev, position in matches:
+            # Filter by length
+            clean_abbrev = abbrev.replace('-', '').replace('.', '')
+            if not (self.min_length <= len(clean_abbrev) <= self.max_length):
+                continue
+            
+            # Frequency-based filtering (too common or too rare)
+            freq = abbrev_counts[abbrev]
+            if freq > 50:  # Too common, likely not abbreviation
+                continue
+            if freq == 1 and len(abbrev) > 5:  # Too rare and long
                 continue
             
             if not self._is_likely_abbreviation(abbrev, text):
@@ -142,23 +357,38 @@ class Extractor:
             # Try to find definition
             definition = self._find_definition(text, abbrev)
             
-            # Only add if we found a definition or it's a short word (likely real abbreviation)
-            if definition or len(abbrev) <= 4:
+            # Try API validation if enabled and no definition found
+            if not definition and self.use_api:
+                api_def = self._validate_with_api(abbrev)
+                if api_def:
+                    definition = api_def
+            
+            # Calculate confidence score
+            confidence = self._calculate_confidence_score(abbrev, definition, text, position)
+            
+            # Only add if confidence is high enough
+            if confidence >= 0.4:
                 # Store or update abbreviation info
                 if abbrev not in self.abbreviations:
                     self.abbreviations[abbrev] = {
                         'definition': definition,
                         'files': [source_file] if source_file else [],
-                        'count': 1
+                        'count': freq,
+                        'confidence': confidence,
+                        'first_position': position
                     }
                 else:
-                    self.abbreviations[abbrev]['count'] += 1
+                    self.abbreviations[abbrev]['count'] += freq
                     if source_file and source_file not in self.abbreviations[abbrev]['files']:
                         self.abbreviations[abbrev]['files'].append(source_file)
                     
                     # Update definition if we found a better one
                     if definition and not self.abbreviations[abbrev]['definition']:
                         self.abbreviations[abbrev]['definition'] = definition
+                    
+                    # Update confidence if higher
+                    if confidence > self.abbreviations[abbrev].get('confidence', 0):
+                        self.abbreviations[abbrev]['confidence'] = confidence
         
         return self.abbreviations
     

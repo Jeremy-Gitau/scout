@@ -39,8 +39,16 @@ jobs:
           --hidden-import=imagehash `
           --hidden-import=numpy `
           --hidden-import=scipy `
+          --hidden-import=spacy `
+          --hidden-import=transformers `
+          --hidden-import=torch `
+          --hidden-import=openpyxl `
           --collect-all PIL `
           --collect-all imagehash `
+          --collect-all spacy `
+          --collect-all transformers `
+          --collect-all torch `
+          --collect-data spacy `
           main.py
     
     - name: Upload Windows artifact
@@ -76,8 +84,16 @@ jobs:
           --hidden-import=imagehash \
           --hidden-import=numpy \
           --hidden-import=scipy \
+          --hidden-import=spacy \
+          --hidden-import=transformers \
+          --hidden-import=torch \
+          --hidden-import=openpyxl \
           --collect-all PIL \
           --collect-all imagehash \
+          --collect-all spacy \
+          --collect-all transformers \
+          --collect-all torch \
+          --collect-data spacy \
           main.py
     
     - name: Upload macOS artifact
@@ -118,8 +134,16 @@ jobs:
           --hidden-import=imagehash \
           --hidden-import=numpy \
           --hidden-import=scipy \
+          --hidden-import=spacy \
+          --hidden-import=transformers \
+          --hidden-import=torch \
+          --hidden-import=openpyxl \
           --collect-all PIL \
           --collect-all imagehash \
+          --collect-all spacy \
+          --collect-all transformers \
+          --collect-all torch \
+          --collect-data spacy \
           main.py
     
     - name: Upload Linux artifact
@@ -165,18 +189,31 @@ jobs:
           ./artifacts/macos/Scout-macOS
           ./artifacts/linux/Scout-Linux
         body: |
-          ## Scout Release
+          ## Scout v1.4.0 Release
           
-          Cross-platform desktop application for extracting abbreviations from documents.
+          Cross-platform desktop application for extracting abbreviations from documents with AI-powered analysis.
+          
+          ### What's New in v1.4.0:
+          - ✨ 8 extraction improvements (spaCy NER, BERT, confidence scoring)
+          - 🚀 Concurrent task management (run multiple scans)
+          - 📂 16 file format support (Excel, CSV, JSON, HTML, Markdown, etc.)
+          - 🎯 Enhanced pattern matching (dotted, hyphenated)
+          - 📊 Real-time task progress tracking
           
           ### Downloads:
           - **Windows**: Scout.exe
-          - **macOS**: Scout (Intel/Apple Silicon)
-          - **Linux**: Scout
+          - **macOS**: Scout-macOS (Intel/Apple Silicon)
+          - **Linux**: Scout-Linux
           
           ### Installation:
-          - Windows: Download and run Scout.exe
-          - macOS: Download Scout, make executable: `chmod +x Scout`, then run
-          - Linux: Download Scout, make executable: `chmod +x Scout`, then run
+          - **Windows**: Download and run Scout.exe
+          - **macOS**: Download Scout-macOS, make executable: `chmod +x Scout-macOS`, then run
+          - **Linux**: Download Scout-Linux, make executable: `chmod +x Scout-Linux`, then run
+          
+          ### Requirements:
+          - Python 3.9+ (if building from source)
+          - Optional: spaCy model for NER (`python -m spacy download en_core_web_sm`)
+          
+          See [Release Notes](https://github.com/yourusername/scout/blob/main/docs/V1.4.0_RELEASE_NOTES.md) for full details.
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -16,6 +16,7 @@ from core.parser import Parser
 from core.smart_extractor import SmartExtractor
 from core.exporter import Exporter
 from core.duplicate_handler import DuplicateHandler
+from core.task_manager import TaskManager, TaskStatus
 
 class ScoutApp:
     
@@ -32,7 +33,8 @@ class ScoutApp:
         self.cancel_scan = False  # Flag to cancel ongoing scan
         self.current_results = {}
         self.log_expanded = False  # Log view collapsed by default
-        self.use_textblob = False  # TextBlob enhancement disabled by default
+        self.task_panel_expanded = True  # Task panel expanded by default
+        self.use_textblob = True  # TextBlob enhancement enabled by default
         
         # Duplicate scanning state
         self.is_scanning_duplicates = False
@@ -44,6 +46,12 @@ class ScoutApp:
         
         # Mode state
         self.current_mode = "abbreviations"  # 'abbreviations' or 'duplicates'
+        
+        # Task management
+        self.task_manager = TaskManager(max_concurrent=3)
+        self.task_manager.start()
+        self.active_tasks = {}  # task_id -> extractor instance
+        self.task_refresh_timer = None
         
         # Setup logging
         self._setup_logging()
@@ -226,13 +234,22 @@ class ScoutApp:
         
         self.scan_btn = ttk.Button(
             abbrev_button_frame,
-            text="🔍 Scan for Abbreviations",
-            command=self._start_scan,
+            text="🔍 Scan Now",
+            command=self._start_scan_as_task,
             bootstyle="success",
-            width=25
+            width=15
         )
         self.scan_btn.pack(side="left", padx=(0, 10))
         self.scan_btn.configure(state="disabled")
+        
+        self.view_tasks_btn = ttk.Button(
+            abbrev_button_frame,
+            text="📋 Active Tasks",
+            command=self._show_active_tasks,
+            bootstyle="primary-outline",
+            width=15
+        )
+        self.view_tasks_btn.pack(side="left", padx=(0, 10))
         
         self.export_btn = ttk.Button(
             abbrev_button_frame,
@@ -650,10 +667,14 @@ class ScoutApp:
             title="Select Document File",
             initialdir=str(Path.home()),
             filetypes=[
-                ("All Supported", "*.txt *.pdf *.docx *.doc"),
-                ("Text Files", "*.txt"),
+                ("All Supported", "*.txt *.pdf *.docx *.doc *.xlsx *.xls *.csv *.tsv *.rtf *.odt *.md *.html *.xml *.json"),
+                ("Text Files", "*.txt *.md *.rtf"),
                 ("PDF Files", "*.pdf"),
-                ("Word Documents", "*.docx *.doc"),
+                ("Word Documents", "*.docx *.doc *.odt"),
+                ("Excel Files", "*.xlsx *.xls"),
+                ("CSV Files", "*.csv *.tsv"),
+                ("Web Files", "*.html *.htm *.xml"),
+                ("JSON Files", "*.json"),
                 ("All Files", "*.*")
             ]
         )
@@ -982,6 +1003,266 @@ class ScoutApp:
             "Scan Cancelled",
             f"Scan was cancelled.\n\nPartial results: {stats['total_abbreviations']} abbreviations found."
         )
+    
+    # ======================
+    # TASK MANAGEMENT METHODS
+    # ======================
+    
+    def _show_active_tasks(self):
+        """Show active tasks in a popup window"""
+        # Create popup window
+        tasks_window = tk.Toplevel(self.root)
+        tasks_window.title("Active Scan Tasks")
+        tasks_window.geometry("700x400")
+        tasks_window.transient(self.root)
+        
+        # Header
+        header_frame = ttk.Frame(tasks_window)
+        header_frame.pack(fill="x", padx=15, pady=15)
+        
+        ttk.Label(
+            header_frame,
+            text="⚡ Active Scan Tasks",
+            font=("Helvetica", 14, "bold")
+        ).pack(side="left")
+        
+        # Clear completed button
+        ttk.Button(
+            header_frame,
+            text="🗑️ Clear Completed",
+            command=lambda: [self.task_manager.clear_completed(), self._refresh_tasks_popup(tasks_window, task_list_frame)],
+            bootstyle="secondary-outline"
+        ).pack(side="right")
+        
+        # Scrollable task list
+        task_canvas = tk.Canvas(tasks_window, bg="#2b2b2b", highlightthickness=0)
+        task_scrollbar = ttk.Scrollbar(tasks_window, orient="vertical", command=task_canvas.yview)
+        task_list_frame = ttk.Frame(task_canvas)
+        
+        task_list_frame.bind(
+            "<Configure>",
+            lambda e: task_canvas.configure(scrollregion=task_canvas.bbox("all"))
+        )
+        
+        task_canvas.create_window((0, 0), window=task_list_frame, anchor="nw")
+        task_canvas.configure(yscrollcommand=task_scrollbar.set)
+        
+        task_canvas.pack(side="left", fill="both", expand=True, padx=15, pady=(0, 15))
+        task_scrollbar.pack(side="right", fill="y", pady=(0, 15))
+        
+        # Initial population
+        self._refresh_tasks_popup(tasks_window, task_list_frame)
+        
+        # Auto-refresh every second
+        def auto_refresh():
+            if tasks_window.winfo_exists():
+                self._refresh_tasks_popup(tasks_window, task_list_frame)
+                tasks_window.after(1000, auto_refresh)
+        
+        auto_refresh()
+    
+    def _refresh_tasks_popup(self, window, task_list_frame):
+        """Refresh the tasks popup window"""
+        if not window.winfo_exists():
+            return
+        
+        # Clear existing items
+        for widget in task_list_frame.winfo_children():
+            widget.destroy()
+        
+        # Get all tasks
+        tasks = self.task_manager.get_all_tasks()
+        
+        if not tasks:
+            # Show empty state
+            ttk.Label(
+                task_list_frame,
+                text="No tasks. Click 'Scan Now' to start a background scan.",
+                font=("Helvetica", 10),
+                foreground="gray"
+            ).pack(pady=30)
+        else:
+            # Show task items
+            for task in tasks:
+                self._create_task_item_popup(task_list_frame, task, window)
+    
+    def _create_task_item_popup(self, parent, task, window):
+        """Create a task item in the popup window"""
+        task_frame = ttk.Frame(parent)
+        task_frame.pack(fill="x", pady=5, padx=10)
+        
+        # Status icon
+        status_icons = {
+            TaskStatus.PENDING: "⏳",
+            TaskStatus.RUNNING: "⚡",
+            TaskStatus.COMPLETED: "✅",
+            TaskStatus.ERROR: "❌",
+            TaskStatus.CANCELLED: "⏹️"
+        }
+        icon = status_icons.get(task.status, "❓")
+        
+        # Task info
+        info_text = f"{icon} {task.name}"
+        if task.status == TaskStatus.RUNNING:
+            info_text += f" - {task.progress * 100:.0f}%"
+            if task.files_processed and task.total_files:
+                info_text += f" ({task.files_processed}/{task.total_files})"
+        
+        task_label = ttk.Label(task_frame, text=info_text, font=("Helvetica", 10))
+        task_label.pack(side="left", fill="x", expand=True)
+        
+        # Action buttons
+        if task.status == TaskStatus.RUNNING or task.status == TaskStatus.PENDING:
+            cancel_btn = ttk.Button(
+                task_frame,
+                text="Cancel",
+                command=lambda: [self.task_manager.cancel_task(task.id), self._refresh_tasks_popup(window, parent)],
+                bootstyle="danger-outline",
+                width=10
+            )
+            cancel_btn.pack(side="right", padx=2)
+        
+        elif task.status == TaskStatus.COMPLETED:
+            export_btn = ttk.Button(
+                task_frame,
+                text="Export",
+                command=lambda: self._export_task_results(task),
+                bootstyle="success-outline",
+                width=10
+            )
+            export_btn.pack(side="right", padx=2)
+            
+            view_btn = ttk.Button(
+                task_frame,
+                text="View",
+                command=lambda: [self._view_task_results(task), window.destroy()],
+                bootstyle="info-outline",
+                width=10
+            )
+            view_btn.pack(side="right", padx=2)
+        
+        # Progress bar for running tasks
+        if task.status == TaskStatus.RUNNING:
+            progress_bar = ttk.Progressbar(
+                task_frame,
+                mode='determinate',
+                value=task.progress * 100,
+                bootstyle="success"
+            )
+            progress_bar.pack(fill="x", pady=(5, 0))
+    
+    def _start_scan_as_task(self):
+        """Start a new scan as a background task"""
+        if not self.selected_directory and not self.selected_file:
+            return
+        
+        # Create task description
+        if self.selected_file:
+            description = f"File: {Path(self.selected_file).name}"
+        else:
+            description = f"Folder: {Path(self.selected_directory).name}"
+        
+        # Create task in queue
+        task_id = self.task_manager.create_task(
+            target=self.selected_file or self.selected_directory,
+            name=description,
+            scan_callback=self._perform_task_scan
+        )
+        
+        self._log(f"Task {task_id} queued: {description}", "INFO")
+        self.status_label.config(text=f"Background scan started: {description}")
+        
+        # Show notification
+        messagebox.showinfo(
+            "Scan Started",
+            f"Background scan started: {description}\n\nClick 'Active Tasks' to monitor progress."
+        )
+    
+    def _perform_task_scan(self, task):
+        """Perform scan for a background task"""
+        try:
+            # Initialize scanner and parser for this task
+            scanner = Scanner()
+            parser = Parser()
+            extractor = Extractor(use_textblob=self.use_textblob)
+            
+            # Determine files to scan
+            target = Path(task.target)
+            if target.is_file():
+                files = [target]
+            else:
+                files = scanner.scan_directory(str(target))
+            
+            total_files = len(files)
+            
+            # Process files
+            for i, file_path in enumerate(files, 1):
+                # Check cancel flag
+                if task.cancel_flag.is_set():
+                    break
+                
+                content = parser.parse_file(file_path)
+                if content:
+                    extractor.extract_from_text(content, str(file_path))
+                
+                # Update progress via TaskManager
+                self.task_manager.update_task_progress(
+                    task.id,
+                    files_processed=i,
+                    total_files=total_files,
+                    results=extractor.abbreviations
+                )
+            
+            # Store final results
+            task.results = {
+                'abbreviations': extractor.abbreviations,
+                'statistics': extractor.get_statistics(),
+                'scanner_stats': scanner.get_stats()
+            }
+            
+        except Exception as e:
+            # TaskManager will handle setting ERROR status
+            raise
+    
+    def _view_task_results(self, task):
+        """View results from a completed task"""
+        if not task.results:
+            return
+        
+        # Display results in main view
+        self.current_results = task.results.get('abbreviations', {})
+        self._display_results(self.current_results)
+        
+        # Update statistics
+        stats = task.results.get('statistics', {})
+        self.stats_label.config(
+            text=f"Task Results: {stats.get('total_abbreviations', 0)} abbreviations | "
+                 f"{stats.get('with_definitions', 0)} with definitions | "
+                 f"{stats.get('without_definitions', 0)} without definitions"
+        )
+        
+        self.status_label.config(text=f"Viewing task results: {task.name}")
+        self._log(f"Loaded results from task {task.id}", "INFO")
+        self._log(f"Loaded results from task {task.task_id[:8]}", "INFO")
+        
+        # Enable export button
+        self.export_btn.configure(state="normal")
+        self.clear_btn.configure(state="normal")
+    
+    def _export_task_results(self, task):
+        """Export results from a completed task"""
+        if not task.results:
+            return
+        
+        # Temporarily set current results
+        original_results = self.current_results
+        self.current_results = task.results.get('abbreviations', {})
+        
+        # Call export
+        self._export_results()
+        
+        # Restore original results
+        self.current_results = original_results
     
     def _update_results_incremental(self, results: dict, file_name: str, new_count: int):
         

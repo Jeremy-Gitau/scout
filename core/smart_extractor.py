@@ -3,13 +3,13 @@ from .extractor import Extractor
 from .llm_extractor import LLMExtractor
 
 class SmartExtractor:
-    def __init__(self, min_length: int = 2, max_length: int = 10, prefer_llm: bool = False, use_textblob: bool = False):
+    def __init__(self, min_length: int = 2, max_length: int = 10, prefer_llm: bool = False, use_textblob: bool = False, use_api: bool = False):
         
         self.min_length = min_length
         self.max_length = max_length
         
-        # Use LLMExtractor with optional TextBlob enhancement
-        self.extractor = LLMExtractor(min_length, max_length, use_llm=False, use_textblob=use_textblob)
+        # Use LLMExtractor with optional TextBlob enhancement and API validation
+        self.extractor = LLMExtractor(min_length, max_length, use_llm=False, use_textblob=use_textblob, use_api=use_api)
         self.mode = "textblob" if use_textblob else "pattern"
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:

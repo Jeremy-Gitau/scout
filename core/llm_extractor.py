@@ -2,6 +2,7 @@ import re
 import os
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
+from .extractor import Extractor
 
 try:
     from textblob import TextBlob
@@ -54,7 +55,7 @@ except ImportError:
         'EVEN', 'NEW', 'WANT', 'BECAUSE', 'ANY', 'THESE', 'GIVE', 'DAY', 'MOST', 'US',
     }
 
-class LLMExtractor:
+class LLMExtractor(Extractor):
     ABBREV_PATTERN = re.compile(r'\b[A-Z][A-Z0-9]{1,9}\b')
     
     # Domain-specific words to exclude beyond NLTK/fallback stopwords
@@ -115,10 +116,8 @@ class LLMExtractor:
         
         return STOP_WORDS | cls.ADDITIONAL_EXCLUDES
     
-    def __init__(self, min_length: int = 2, max_length: int = 10, use_llm: bool = False, use_textblob: bool = False):
-        self.min_length = min_length
-        self.max_length = max_length
-        self.abbreviations: Dict[str, dict] = {}
+    def __init__(self, min_length: int = 2, max_length: int = 10, use_llm: bool = False, use_textblob: bool = False, use_api: bool = False):
+        super().__init__(min_length, max_length, use_api)
         self.use_textblob = use_textblob and HAS_TEXTBLOB
     
     def _is_likely_abbreviation(self, word: str, text: str) -> bool:
