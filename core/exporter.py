@@ -1,13 +1,14 @@
 import csv
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 from datetime import datetime
 
 class Exporter:
     
     def __init__(self):
         self.last_export_path: Path = None
+        self.last_export_paths: List[Path] = []
     
     def export_to_txt(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
         
@@ -280,3 +281,102 @@ class Exporter:
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         return f"scout_report_{timestamp}.{format}"
+    
+    def _split_abbreviations(self, abbreviations: Dict[str, dict], 
+                            max_per_file: int) -> List[Dict[str, dict]]:
+        """Split abbreviations into multiple batches"""
+        if max_per_file <= 0 or len(abbreviations) <= max_per_file:
+            return [abbreviations]
+        
+        batches = []
+        items = list(sorted(abbreviations.items()))
+        
+        for i in range(0, len(items), max_per_file):
+            batch = dict(items[i:i + max_per_file])
+            batches.append(batch)
+        
+        return batches
+    
+    def export_batch(self, abbreviations: Dict[str, dict], output_path: str,
+                    format: str = 'txt', limit: int = None, 
+                    items_per_file: int = None) -> tuple[bool, List[str]]:
+        """
+        Export abbreviations with options for limiting and splitting.
+        
+        Args:
+            abbreviations: Dictionary of abbreviations to export
+            output_path: Base path for output file(s)
+            format: Export format (txt, csv, json, xlsx, pdf)
+            limit: Maximum total abbreviations to export (None = all)
+            items_per_file: Number of abbreviations per file (None = all in one file)
+        
+        Returns:
+            tuple: (success: bool, created_files: List[str])
+        """
+        try:
+            # Apply limit if specified
+            if limit and limit > 0:
+                sorted_items = sorted(abbreviations.items())[:limit]
+                abbreviations = dict(sorted_items)
+            
+            # Split into batches if needed
+            if items_per_file and items_per_file > 0:
+                batches = self._split_abbreviations(abbreviations, items_per_file)
+            else:
+                batches = [abbreviations]
+            
+            # Reset export paths list
+            self.last_export_paths = []
+            created_files = []
+            
+            # Export each batch
+            output_file = Path(output_path)
+            base_name = output_file.stem
+            extension = output_file.suffix or f'.{format}'
+            parent_dir = output_file.parent
+            
+            for i, batch in enumerate(batches):
+                if len(batches) > 1:
+                    # Create numbered filename for multiple files
+                    batch_filename = f"{base_name}_part{i+1}{extension}"
+                    batch_path = parent_dir / batch_filename
+                else:
+                    batch_path = output_file
+                
+                # Export this batch
+                success = self._export_single(batch, str(batch_path), format)
+                
+                if not success:
+                    return False, created_files
+                
+                self.last_export_paths.append(batch_path)
+                created_files.append(str(batch_path))
+            
+            # Set last export path to first file for compatibility
+            if self.last_export_paths:
+                self.last_export_path = self.last_export_paths[0]
+            
+            return True, created_files
+            
+        except Exception as e:
+            print(f"Error in batch export: {e}")
+            return False, []
+    
+    def _export_single(self, abbreviations: Dict[str, dict], 
+                      output_path: str, format: str) -> bool:
+        """Export a single batch of abbreviations"""
+        format = format.lower()
+        
+        if format == 'txt':
+            return self.export_to_txt(abbreviations, output_path)
+        elif format == 'csv':
+            return self.export_to_csv(abbreviations, output_path)
+        elif format == 'json':
+            return self.export_to_json(abbreviations, output_path)
+        elif format in ['xlsx', 'excel']:
+            return self.export_to_excel(abbreviations, output_path)
+        elif format == 'pdf':
+            return self.export_to_pdf(abbreviations, output_path)
+        else:
+            print(f"Unsupported format: {format}")
+            return False

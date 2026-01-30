@@ -16,7 +16,6 @@ from core.parser import Parser
 from core.smart_extractor import SmartExtractor
 from core.exporter import Exporter
 from core.duplicate_handler import DuplicateHandler
-from core.task_manager import TaskManager, TaskStatus
 
 class ScoutApp:
     
@@ -46,12 +45,6 @@ class ScoutApp:
         
         # Mode state
         self.current_mode = "abbreviations"  # 'abbreviations' or 'duplicates'
-        
-        # Task management
-        self.task_manager = TaskManager(max_concurrent=3)
-        self.task_manager.start()
-        self.active_tasks = {}  # task_id -> extractor instance
-        self.task_refresh_timer = None
         
         # Setup logging
         self._setup_logging()
@@ -342,21 +335,12 @@ class ScoutApp:
         self.scan_btn = ttk.Button(
             abbrev_button_frame,
             text="🔍 Scan Now",
-            command=self._start_scan_as_task,
+            command=self._start_scan,
             bootstyle="success",
             width=15
         )
         self.scan_btn.pack(side="left", padx=(0, 10))
         self.scan_btn.configure(state="disabled")
-        
-        self.view_tasks_btn = ttk.Button(
-            abbrev_button_frame,
-            text="📋 Active Tasks",
-            command=self._show_active_tasks,
-            bootstyle="primary-outline",
-            width=15
-        )
-        self.view_tasks_btn.pack(side="left", padx=(0, 10))
         
         self.export_btn = ttk.Button(
             abbrev_button_frame,
@@ -545,8 +529,9 @@ class ScoutApp:
         
         self.progress_bar = ttk.Progressbar(
             self.progress_frame,
-            mode='indeterminate',
-            bootstyle="success-striped"
+            mode='determinate',
+            bootstyle="success-striped",
+            maximum=100
         )
         self.progress_bar.pack(fill="x")
     
@@ -920,14 +905,28 @@ class ScoutApp:
         self.extractor.clear()
         self.results_tree.delete(*self.results_tree.get_children())
         
-        # Start progress bar
-        self.progress_bar.start(10)
+        # Reset progress bar
+        self.progress_bar['value'] = 0
         self.progress_label.config(text="Scanning files...")
         self.status_label.config(text="Scanning in progress...")
         
         # Run scan in separate thread
         thread = threading.Thread(target=self._perform_scan, daemon=True)
         thread.start()
+    
+    def _update_scan_progress(self, current: int, total: int, percentage: int, 
+                             phase: str = "Processing", filename: str = None):
+        """Update progress bar and label during scanning"""
+        self.progress_bar['value'] = percentage
+        
+        if filename:
+            self.progress_label.config(
+                text=f"{phase} {filename} ({current}/{total})"
+            )
+        else:
+            self.progress_label.config(
+                text=f"{phase} files ({current}/{total})"
+            )
     
     def _perform_scan(self):
         
@@ -960,10 +959,10 @@ class ScoutApp:
                     self.root.after(0, self._scan_cancelled)
                     return
                 
-                self.root.after(0, lambda idx=i, total=total_files: 
-                    self.progress_label.config(
-                        text=f"Reading file {idx}/{total}..."
-                    ))
+                # Update progress (0-30% for reading phase)
+                progress_pct = int((i / total_files) * 30)
+                self.root.after(0, lambda idx=i, total=total_files, pct=progress_pct: 
+                    self._update_scan_progress(idx, total, pct, "Reading"))
                 
                 content = self.parser.parse_file(file_path)
                 file_contents.append((file_path, content))
@@ -995,12 +994,11 @@ class ScoutApp:
                 if not content:
                     continue
                 
-                # Update progress
+                # Update progress (30-100% for extraction phase)
                 file_name = file_path.name
-                self.root.after(0, lambda idx=i, total=total_files, name=file_name: 
-                    self.progress_label.config(
-                        text=f"Processing {name} ({idx}/{total})..."
-                    ))
+                progress_pct = 30 + int((i / len(file_contents)) * 70)
+                self.root.after(0, lambda idx=i, total=len(file_contents), pct=progress_pct, name=file_name: 
+                    self._update_scan_progress(idx, total, pct, "Processing", name))
                 
                 # Small sleep to allow cancel flag to be checked
                 time.sleep(0.001)
@@ -1036,7 +1034,7 @@ class ScoutApp:
     def _scan_complete(self):
         
         self.is_scanning = False
-        self.progress_bar.stop()
+        self.progress_bar['value'] = 100
         
         # Display final results
         self._display_results(self.current_results)
@@ -1076,7 +1074,7 @@ class ScoutApp:
         
         self.is_scanning = False
         self.cancel_scan = False
-        self.progress_bar.stop()
+        self.progress_bar['value'] = 0
         
         # Get current stats
         stats = self.extractor.get_statistics()
@@ -1115,262 +1113,6 @@ class ScoutApp:
     # TASK MANAGEMENT METHODS
     # ======================
     
-    def _show_active_tasks(self):
-        """Show active tasks in a popup window"""
-        # Create popup window
-        tasks_window = tk.Toplevel(self.root)
-        tasks_window.title("Active Scan Tasks")
-        tasks_window.geometry("700x400")
-        tasks_window.transient(self.root)
-        
-        # Header
-        header_frame = ttk.Frame(tasks_window)
-        header_frame.pack(fill="x", padx=15, pady=15)
-        
-        ttk.Label(
-            header_frame,
-            text="⚡ Active Scan Tasks",
-            font=("Helvetica", 14, "bold")
-        ).pack(side="left")
-        
-        # Clear completed button
-        ttk.Button(
-            header_frame,
-            text="🗑️ Clear Completed",
-            command=lambda: [self.task_manager.clear_completed(), self._refresh_tasks_popup(tasks_window, task_list_frame)],
-            bootstyle="secondary-outline"
-        ).pack(side="right")
-        
-        # Scrollable task list
-        task_canvas = tk.Canvas(tasks_window, bg="#2b2b2b", highlightthickness=0)
-        task_scrollbar = ttk.Scrollbar(tasks_window, orient="vertical", command=task_canvas.yview)
-        task_list_frame = ttk.Frame(task_canvas)
-        
-        task_list_frame.bind(
-            "<Configure>",
-            lambda e: task_canvas.configure(scrollregion=task_canvas.bbox("all"))
-        )
-        
-        task_canvas.create_window((0, 0), window=task_list_frame, anchor="nw")
-        task_canvas.configure(yscrollcommand=task_scrollbar.set)
-        
-        task_canvas.pack(side="left", fill="both", expand=True, padx=15, pady=(0, 15))
-        task_scrollbar.pack(side="right", fill="y", pady=(0, 15))
-        
-        # Initial population
-        self._refresh_tasks_popup(tasks_window, task_list_frame)
-        
-        # Auto-refresh every second
-        def auto_refresh():
-            if tasks_window.winfo_exists():
-                self._refresh_tasks_popup(tasks_window, task_list_frame)
-                tasks_window.after(1000, auto_refresh)
-        
-        auto_refresh()
-    
-    def _refresh_tasks_popup(self, window, task_list_frame):
-        """Refresh the tasks popup window"""
-        if not window.winfo_exists():
-            return
-        
-        # Clear existing items
-        for widget in task_list_frame.winfo_children():
-            widget.destroy()
-        
-        # Get all tasks
-        tasks = self.task_manager.get_all_tasks()
-        
-        if not tasks:
-            # Show empty state
-            ttk.Label(
-                task_list_frame,
-                text="No tasks. Click 'Scan Now' to start a background scan.",
-                font=("Helvetica", 10),
-                foreground="gray"
-            ).pack(pady=30)
-        else:
-            # Show task items
-            for task in tasks:
-                self._create_task_item_popup(task_list_frame, task, window)
-    
-    def _create_task_item_popup(self, parent, task, window):
-        """Create a task item in the popup window"""
-        task_frame = ttk.Frame(parent)
-        task_frame.pack(fill="x", pady=5, padx=10)
-        
-        # Status icon
-        status_icons = {
-            TaskStatus.PENDING: "⏳",
-            TaskStatus.RUNNING: "⚡",
-            TaskStatus.COMPLETED: "✅",
-            TaskStatus.ERROR: "❌",
-            TaskStatus.CANCELLED: "⏹️"
-        }
-        icon = status_icons.get(task.status, "❓")
-        
-        # Task info
-        info_text = f"{icon} {task.name}"
-        if task.status == TaskStatus.RUNNING:
-            info_text += f" - {task.progress * 100:.0f}%"
-            if task.files_processed and task.total_files:
-                info_text += f" ({task.files_processed}/{task.total_files})"
-        
-        task_label = ttk.Label(task_frame, text=info_text, font=("Helvetica", 10))
-        task_label.pack(side="left", fill="x", expand=True)
-        
-        # Action buttons
-        if task.status == TaskStatus.RUNNING or task.status == TaskStatus.PENDING:
-            cancel_btn = ttk.Button(
-                task_frame,
-                text="Cancel",
-                command=lambda: [self.task_manager.cancel_task(task.id), self._refresh_tasks_popup(window, parent)],
-                bootstyle="danger-outline",
-                width=10
-            )
-            cancel_btn.pack(side="right", padx=2)
-        
-        elif task.status == TaskStatus.COMPLETED:
-            export_btn = ttk.Button(
-                task_frame,
-                text="Export",
-                command=lambda: self._export_task_results(task),
-                bootstyle="success-outline",
-                width=10
-            )
-            export_btn.pack(side="right", padx=2)
-            
-            view_btn = ttk.Button(
-                task_frame,
-                text="View",
-                command=lambda: [self._view_task_results(task), window.destroy()],
-                bootstyle="info-outline",
-                width=10
-            )
-            view_btn.pack(side="right", padx=2)
-        
-        # Progress bar for running tasks
-        if task.status == TaskStatus.RUNNING:
-            progress_bar = ttk.Progressbar(
-                task_frame,
-                mode='determinate',
-                value=task.progress * 100,
-                bootstyle="success"
-            )
-            progress_bar.pack(fill="x", pady=(5, 0))
-    
-    def _start_scan_as_task(self):
-        """Start a new scan as a background task"""
-        if not self.selected_directory and not self.selected_file:
-            return
-        
-        # Create task description
-        if self.selected_file:
-            description = f"File: {Path(self.selected_file).name}"
-        else:
-            description = f"Folder: {Path(self.selected_directory).name}"
-        
-        # Create task in queue
-        task_id = self.task_manager.create_task(
-            target=self.selected_file or self.selected_directory,
-            name=description,
-            scan_callback=self._perform_task_scan
-        )
-        
-        self._log(f"Task {task_id} queued: {description}", "INFO")
-        self.status_label.config(text=f"Background scan started: {description}")
-        
-        # Show notification
-        messagebox.showinfo(
-            "Scan Started",
-            f"Background scan started: {description}\n\nClick 'Active Tasks' to monitor progress."
-        )
-    
-    def _perform_task_scan(self, task):
-        """Perform scan for a background task"""
-        try:
-            # Initialize scanner and parser for this task
-            scanner = Scanner()
-            parser = Parser()
-            extractor = Extractor(use_textblob=self.use_textblob)
-            
-            # Determine files to scan
-            target = Path(task.target)
-            if target.is_file():
-                files = [target]
-            else:
-                files = scanner.scan_directory(str(target))
-            
-            total_files = len(files)
-            
-            # Process files
-            for i, file_path in enumerate(files, 1):
-                # Check cancel flag
-                if task.cancel_flag.is_set():
-                    break
-                
-                content = parser.parse_file(file_path)
-                if content:
-                    extractor.extract_from_text(content, str(file_path))
-                
-                # Update progress via TaskManager
-                self.task_manager.update_task_progress(
-                    task.id,
-                    files_processed=i,
-                    total_files=total_files,
-                    results=extractor.abbreviations
-                )
-            
-            # Store final results
-            task.results = {
-                'abbreviations': extractor.abbreviations,
-                'statistics': extractor.get_statistics(),
-                'scanner_stats': scanner.get_stats()
-            }
-            
-        except Exception as e:
-            # TaskManager will handle setting ERROR status
-            raise
-    
-    def _view_task_results(self, task):
-        """View results from a completed task"""
-        if not task.results:
-            return
-        
-        # Display results in main view
-        self.current_results = task.results.get('abbreviations', {})
-        self._display_results(self.current_results)
-        
-        # Update statistics
-        stats = task.results.get('statistics', {})
-        self.stats_label.config(
-            text=f"Task Results: {stats.get('total_abbreviations', 0)} abbreviations | "
-                 f"{stats.get('with_definitions', 0)} with definitions | "
-                 f"{stats.get('without_definitions', 0)} without definitions"
-        )
-        
-        self.status_label.config(text=f"Viewing task results: {task.name}")
-        self._log(f"Loaded results from task {task.id}", "INFO")
-        self._log(f"Loaded results from task {task.task_id[:8]}", "INFO")
-        
-        # Enable export button
-        self.export_btn.configure(state="normal")
-        self.clear_btn.configure(state="normal")
-    
-    def _export_task_results(self, task):
-        """Export results from a completed task"""
-        if not task.results:
-            return
-        
-        # Temporarily set current results
-        original_results = self.current_results
-        self.current_results = task.results.get('abbreviations', {})
-        
-        # Call export
-        self._export_results()
-        
-        # Restore original results
-        self.current_results = original_results
-    
     def _update_results_incremental(self, results: dict, file_name: str, new_count: int):
         
         # Update the tree view with all current abbreviations
@@ -1391,7 +1133,7 @@ class ScoutApp:
         
         self.is_scanning = False
         self.cancel_scan = False
-        self.progress_bar.stop()
+        self.progress_bar['value'] = 0
         self.progress_label.config(text="Scan failed")
         self.status_label.config(text="Error occurred")
         
@@ -1655,7 +1397,7 @@ class ScoutApp:
         
         export_window = tk.Toplevel(self.root)
         export_window.title("Export Report")
-        export_window.geometry("400x350")
+        export_window.geometry("500x600")
         export_window.transient(self.root)
         export_window.grab_set()
         
@@ -1670,15 +1412,141 @@ class ScoutApp:
         
         ttk.Label(
             container,
-            text="Select Export Format",
+            text="Export Options",
             font=("Helvetica", 14, "bold")
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 10))
+        
+        # Export options frame
+        options_frame = ttk.LabelFrame(container, text="Export Settings", padding=15)
+        options_frame.pack(fill="x", pady=(0, 20))
+        
+        # Total abbreviations info
+        total_abbrevs = len(self.current_results) if self.current_results else 0
+        ttk.Label(
+            options_frame,
+            text=f"Total abbreviations available: {total_abbrevs}",
+            font=("Helvetica", 10, "bold"),
+            bootstyle="info"
+        ).pack(pady=(0, 15))
+        
+        # Limit option
+        limit_frame = ttk.Frame(options_frame)
+        limit_frame.pack(fill="x", pady=5)
+        
+        limit_var = tk.BooleanVar(value=False)
+        limit_check = ttk.Checkbutton(
+            limit_frame,
+            text="Limit number of abbreviations:",
+            variable=limit_var,
+            bootstyle="primary-round-toggle"
+        )
+        limit_check.pack(side="left")
+        
+        limit_entry = ttk.Entry(limit_frame, width=10)
+        limit_entry.insert(0, "100")
+        limit_entry.pack(side="left", padx=(10, 0))
+        limit_entry.configure(state="disabled")
+        
+        def toggle_limit():
+            if limit_var.get():
+                limit_entry.configure(state="normal")
+            else:
+                limit_entry.configure(state="disabled")
+        
+        limit_var.trace('w', lambda *args: toggle_limit())
+        
+        # Split into files option
+        split_frame = ttk.Frame(options_frame)
+        split_frame.pack(fill="x", pady=(15, 5))
+        
+        split_var = tk.BooleanVar(value=False)
+        split_check = ttk.Checkbutton(
+            split_frame,
+            text="Split into multiple files:",
+            variable=split_var,
+            bootstyle="primary-round-toggle"
+        )
+        split_check.pack(side="left")
+        
+        split_entry = ttk.Entry(split_frame, width=10)
+        split_entry.insert(0, "200")
+        split_entry.pack(side="left", padx=(10, 0))
+        split_entry.configure(state="disabled")
+        
+        ttk.Label(
+            split_frame,
+            text="per file",
+            font=("Helvetica", 9)
+        ).pack(side="left", padx=(5, 0))
+        
+        def toggle_split():
+            if split_var.get():
+                split_entry.configure(state="normal")
+            else:
+                split_entry.configure(state="disabled")
+        
+        split_var.trace('w', lambda *args: toggle_split())
+        
+        # Preview label
+        preview_label = ttk.Label(
+            options_frame,
+            text="",
+            font=("Helvetica", 9),
+            bootstyle="secondary"
+        )
+        preview_label.pack(pady=(10, 0))
+        
+        def update_preview(*args):
+            try:
+                total = total_abbrevs
+                limit = None
+                items_per_file = None
+                
+                if limit_var.get():
+                    limit = int(limit_entry.get() or 0)
+                    if limit > 0:
+                        total = min(limit, total_abbrevs)
+                
+                if split_var.get():
+                    items_per_file = int(split_entry.get() or 0)
+                    if items_per_file > 0:
+                        num_files = (total + items_per_file - 1) // items_per_file
+                        preview_label.config(
+                            text=f"📁 Will create {num_files} file(s) with {total} abbreviations total"
+                        )
+                    else:
+                        preview_label.config(text="⚠️ Invalid items per file")
+                else:
+                    preview_label.config(
+                        text=f"📄 Will create 1 file with {total} abbreviations"
+                    )
+            except ValueError:
+                preview_label.config(text="⚠️ Please enter valid numbers")
+        
+        limit_var.trace('w', update_preview)
+        split_var.trace('w', update_preview)
+        limit_entry.bind('<KeyRelease>', update_preview)
+        split_entry.bind('<KeyRelease>', update_preview)
+        update_preview()
+        
+        # Format selection
+        ttk.Label(
+            container,
+            text="Select Export Format",
+            font=("Helvetica", 12, "bold")
+        ).pack(pady=(10, 10))
+        
+        # Store variables for export function access
+        export_window.limit_var = limit_var
+        export_window.limit_entry = limit_entry
+        export_window.split_var = split_var
+        export_window.split_entry = split_entry
         
         # Export format buttons
         ttk.Button(
             container,
             text="📄 Export as Text (.txt)",
-            command=lambda: self._export('txt', export_window),
+            command=lambda: self._export_with_options('txt', export_window),
             bootstyle="success",
             width=30
         ).pack(pady=5)
@@ -1686,7 +1554,7 @@ class ScoutApp:
         ttk.Button(
             container,
             text="📊 Export as CSV (.csv)",
-            command=lambda: self._export('csv', export_window),
+            command=lambda: self._export_with_options('csv', export_window),
             bootstyle="info",
             width=30
         ).pack(pady=5)
@@ -1694,7 +1562,7 @@ class ScoutApp:
         ttk.Button(
             container,
             text="📋 Export as JSON (.json)",
-            command=lambda: self._export('json', export_window),
+            command=lambda: self._export_with_options('json', export_window),
             bootstyle="primary",
             width=30
         ).pack(pady=5)
@@ -1702,7 +1570,7 @@ class ScoutApp:
         ttk.Button(
             container,
             text="📗 Export as Excel (.xlsx)",
-            command=lambda: self._export('xlsx', export_window),
+            command=lambda: self._export_with_options('xlsx', export_window),
             bootstyle="success-outline",
             width=30
         ).pack(pady=5)
@@ -1710,7 +1578,7 @@ class ScoutApp:
         ttk.Button(
             container,
             text="📕 Export as PDF (.pdf)",
-            command=lambda: self._export('pdf', export_window),
+            command=lambda: self._export_with_options('pdf', export_window),
             bootstyle="danger-outline",
             width=30
         ).pack(pady=5)
@@ -1723,10 +1591,30 @@ class ScoutApp:
             width=30
         ).pack(pady=(20, 0))
     
-    def _export(self, format: str, dialog):
-        
+    def _export_with_options(self, format: str, dialog):
+        """Export with limit and split options"""
         if not self.current_results:
             messagebox.showwarning("No Results", "No results to export!")
+            return
+        
+        # Get options from dialog
+        try:
+            limit = None
+            items_per_file = None
+            
+            if dialog.limit_var.get():
+                limit = int(dialog.limit_entry.get())
+                if limit <= 0:
+                    messagebox.showwarning("Invalid Input", "Limit must be greater than 0")
+                    return
+            
+            if dialog.split_var.get():
+                items_per_file = int(dialog.split_entry.get())
+                if items_per_file <= 0:
+                    messagebox.showwarning("Invalid Input", "Items per file must be greater than 0")
+                    return
+        except ValueError:
+            messagebox.showwarning("Invalid Input", "Please enter valid numbers")
             return
         
         # Get save location
@@ -1735,33 +1623,53 @@ class ScoutApp:
         filetypes = {
             'txt': [("Text files", "*.txt"), ("All files", "*.*")],
             'csv': [("CSV files", "*.csv"), ("All files", "*.*")],
-            'json': [("JSON files", "*.json"), ("All files", "*.*")]
+            'json': [("JSON files", "*.json"), ("All files", "*.*")],
+            'xlsx': [("Excel files", "*.xlsx"), ("All files", "*.*")],
+            'pdf': [("PDF files", "*.pdf"), ("All files", "*.*")]
         }
         
         filepath = filedialog.asksaveasfilename(
             defaultextension=f".{format}",
-            filetypes=filetypes[format],
+            filetypes=filetypes.get(format, [("All files", "*.*")]),
             initialfile=default_filename,
             title=f"Save {format.upper()} Report"
         )
         
         if filepath:
-            success = self.exporter.export(self.current_results, filepath, format)
+            success, created_files = self.exporter.export_batch(
+                self.current_results, 
+                filepath, 
+                format,
+                limit=limit,
+                items_per_file=items_per_file
+            )
             
             if success:
-                self._log(f"Exported results to {format.upper()}: {filepath}", "INFO")
                 dialog.destroy()
-                messagebox.showinfo(
-                    "Export Successful",
-                    f"Report saved to:\n{filepath}"
-                )
-                self.status_label.config(text=f"Exported to {Path(filepath).name}")
+                
+                # Show success message with file count
+                if len(created_files) > 1:
+                    file_list = "\n".join([Path(f).name for f in created_files[:5]])
+                    if len(created_files) > 5:
+                        file_list += f"\n... and {len(created_files) - 5} more"
+                    
+                    messagebox.showinfo(
+                        "Export Successful",
+                        f"Successfully exported {len(created_files)} files:\n\n{file_list}"
+                    )
+                else:
+                    messagebox.showinfo(
+                        "Export Successful",
+                        f"Report exported successfully to:\n{Path(filepath).name}"
+                    )
+                
+                self._log(f"Exported {len(created_files)} file(s) in {format.upper()} format", "INFO")
             else:
-                self._log(f"{format.upper()} export failed", "ERROR")
-                messagebox.showerror(
-                    "Export Failed",
-                    "Failed to export report. Please try again."
-                )
+                messagebox.showerror("Export Failed", "Failed to export report. Check logs for details.")
+    
+    def _export(self, format: str, dialog):
+        """Legacy export function for backwards compatibility"""
+        self._export_with_options(format, dialog)
     
     def _clear_results(self):
         
