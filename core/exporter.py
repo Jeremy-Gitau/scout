@@ -127,6 +127,136 @@ class Exporter:
             print(f"Error exporting to JSON: {e}")
             return False
     
+    def export_to_excel(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
+        
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Abbreviations"
+            
+            # Header row with styling
+            headers = ['Abbreviation', 'Definition', 'Occurrences', 'File Count', 'Files']
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = Font(bold=True, size=12)
+                cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Data rows
+            for row, (abbrev, info) in enumerate(sorted(abbreviations.items()), 2):
+                definition = info['definition'] or "Definition not found"
+                count = info['count']
+                file_count = len(info['files'])
+                files = ', '.join(Path(f).name for f in info['files'])
+                
+                ws.cell(row=row, column=1, value=abbrev)
+                ws.cell(row=row, column=2, value=definition)
+                ws.cell(row=row, column=3, value=count)
+                ws.cell(row=row, column=4, value=file_count)
+                ws.cell(row=row, column=5, value=files)
+            
+            # Adjust column widths
+            ws.column_dimensions['A'].width = 20
+            ws.column_dimensions['B'].width = 50
+            ws.column_dimensions['C'].width = 15
+            ws.column_dimensions['D'].width = 15
+            ws.column_dimensions['E'].width = 40
+            
+            wb.save(output_file)
+            self.last_export_path = output_file
+            return True
+            
+        except ImportError:
+            print("openpyxl not installed. Install with: pip install openpyxl")
+            return False
+        except Exception as e:
+            print(f"Error exporting to Excel: {e}")
+            return False
+    
+    def export_to_pdf(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
+        
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib import colors
+            
+            output_file = Path(output_path)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            doc = SimpleDocTemplate(str(output_file), pagesize=letter)
+            elements = []
+            styles = getSampleStyleSheet()
+            
+            # Title
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                textColor=colors.HexColor('#366092'),
+                spaceAfter=30,
+            )
+            elements.append(Paragraph("Scout Abbreviation Report", title_style))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Statistics
+            total = len(abbreviations)
+            with_def = sum(1 for info in abbreviations.values() if info['definition'])
+            
+            stats_style = ParagraphStyle(
+                'Stats',
+                parent=styles['Normal'],
+                fontSize=10,
+                spaceAfter=12,
+            )
+            elements.append(Paragraph(f"<b>Total Abbreviations:</b> {total}", stats_style))
+            elements.append(Paragraph(f"<b>With Definitions:</b> {with_def}", stats_style))
+            elements.append(Paragraph(f"<b>Without Definitions:</b> {total - with_def}", stats_style))
+            elements.append(Spacer(1, 0.3*inch))
+            
+            # Table data
+            data = [['Abbreviation', 'Definition', 'Count', 'Files']]
+            for abbrev, info in sorted(abbreviations.items()):
+                definition = info['definition'] or "Definition not found"
+                count = str(info['count'])
+                file_count = str(len(info['files']))
+                data.append([abbrev, definition[:80], count, file_count])
+            
+            # Create table
+            table = Table(data, colWidths=[1.2*inch, 4*inch, 0.8*inch, 0.8*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+            ]))
+            
+            elements.append(table)
+            doc.build(elements)
+            
+            self.last_export_path = output_file
+            return True
+            
+        except ImportError:
+            print("reportlab not installed. Install with: pip install reportlab")
+            return False
+        except Exception as e:
+            print(f"Error exporting to PDF: {e}")
+            return False
+    
     def export(self, abbreviations: Dict[str, dict], output_path: str, 
                format: str = 'txt') -> bool:
         
@@ -138,6 +268,10 @@ class Exporter:
             return self.export_to_csv(abbreviations, output_path)
         elif format == 'json':
             return self.export_to_json(abbreviations, output_path)
+        elif format in ['xlsx', 'excel']:
+            return self.export_to_excel(abbreviations, output_path)
+        elif format == 'pdf':
+            return self.export_to_pdf(abbreviations, output_path)
         else:
             print(f"Unsupported format: {format}")
             return False

@@ -1216,7 +1216,7 @@ class ScoutApp:
         
         export_window = tk.Toplevel(self.root)
         export_window.title("Export Report")
-        export_window.geometry("400x250")
+        export_window.geometry("400x350")
         export_window.transient(self.root)
         export_window.grab_set()
         
@@ -1242,7 +1242,7 @@ class ScoutApp:
             command=lambda: self._export('txt', export_window),
             bootstyle="success",
             width=30
-        ).pack(pady=10)
+        ).pack(pady=5)
         
         ttk.Button(
             container,
@@ -1250,7 +1250,7 @@ class ScoutApp:
             command=lambda: self._export('csv', export_window),
             bootstyle="info",
             width=30
-        ).pack(pady=10)
+        ).pack(pady=5)
         
         ttk.Button(
             container,
@@ -1258,7 +1258,23 @@ class ScoutApp:
             command=lambda: self._export('json', export_window),
             bootstyle="primary",
             width=30
-        ).pack(pady=10)
+        ).pack(pady=5)
+        
+        ttk.Button(
+            container,
+            text="📗 Export as Excel (.xlsx)",
+            command=lambda: self._export('xlsx', export_window),
+            bootstyle="success-outline",
+            width=30
+        ).pack(pady=5)
+        
+        ttk.Button(
+            container,
+            text="📕 Export as PDF (.pdf)",
+            command=lambda: self._export('pdf', export_window),
+            bootstyle="danger-outline",
+            width=30
+        ).pack(pady=5)
         
         ttk.Button(
             container,
