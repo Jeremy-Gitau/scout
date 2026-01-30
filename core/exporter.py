@@ -1,32 +1,16 @@
-"""
-Exporter module for generating reports in various formats.
-Supports TXT, CSV, and JSON exports with cross-platform compatibility.
-"""
-
 import csv
 import json
 from pathlib import Path
 from typing import Dict
 from datetime import datetime
 
-
 class Exporter:
-    """Exports abbreviation data to various formats."""
     
     def __init__(self):
         self.last_export_path: Path = None
     
     def export_to_txt(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
-        """
-        Export abbreviations to a formatted text file.
         
-        Args:
-            abbreviations: Dictionary of abbreviations and their info
-            output_path: Path where the file should be saved
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -79,16 +63,7 @@ class Exporter:
             return False
     
     def export_to_csv(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
-        """
-        Export abbreviations to CSV format.
-        
-        Args:
-            abbreviations: Dictionary of abbreviations and their info
-            output_path: Path where the file should be saved
-            
-        Returns:
-            True if successful, False otherwise
-        """
+       
         try:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -118,16 +93,7 @@ class Exporter:
             return False
     
     def export_to_json(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
-        """
-        Export abbreviations to JSON format.
         
-        Args:
-            abbreviations: Dictionary of abbreviations and their info
-            output_path: Path where the file should be saved
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -163,17 +129,7 @@ class Exporter:
     
     def export(self, abbreviations: Dict[str, dict], output_path: str, 
                format: str = 'txt') -> bool:
-        """
-        Export abbreviations in the specified format.
         
-        Args:
-            abbreviations: Dictionary of abbreviations and their info
-            output_path: Path where the file should be saved
-            format: Output format ('txt', 'csv', or 'json')
-            
-        Returns:
-            True if successful, False otherwise
-        """
         format = format.lower()
         
         if format == 'txt':
@@ -187,14 +143,6 @@ class Exporter:
             return False
     
     def get_default_filename(self, format: str = 'txt') -> str:
-        """
-        Generate a default filename with timestamp.
         
-        Args:
-            format: File format extension
-            
-        Returns:
-            Default filename string
-        """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         return f"scout_report_{timestamp}.{format}"

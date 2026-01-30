@@ -1,8 +1,3 @@
-"""Fast pattern-based abbreviation extractor.
-Uses regex patterns to find explicit abbreviation definitions.
-Optional TextBlob enhancement for better noun phrase extraction.
-"""
-
 import re
 import os
 from typing import Dict, List, Optional, Tuple
@@ -59,13 +54,7 @@ except ImportError:
         'EVEN', 'NEW', 'WANT', 'BECAUSE', 'ANY', 'THESE', 'GIVE', 'DAY', 'MOST', 'US',
     }
 
-
 class LLMExtractor:
-    """
-    Fast pattern-based abbreviation extractor.
-    Uses regex patterns to find explicit abbreviation definitions.
-    """
-    
     ABBREV_PATTERN = re.compile(r'\b[A-Z][A-Z0-9]{1,9}\b')
     
     # Domain-specific words to exclude beyond NLTK/fallback stopwords
@@ -123,7 +112,7 @@ class LLMExtractor:
     
     @classmethod
     def get_excluded_words(cls):
-        """Get all words that should be excluded from abbreviation extraction."""
+        
         return STOP_WORDS | cls.ADDITIONAL_EXCLUDES
     
     def __init__(self, min_length: int = 2, max_length: int = 10, use_llm: bool = False, use_textblob: bool = False):
@@ -133,9 +122,7 @@ class LLMExtractor:
         self.use_textblob = use_textblob and HAS_TEXTBLOB
     
     def _is_likely_abbreviation(self, word: str, text: str) -> bool:
-        """
-        Determine if a word is likely an abbreviation vs. a common word in caps.
-        """
+        
         # Exclude NLTK stopwords and additional common words
         excluded = self.get_excluded_words()
         if word in excluded:
@@ -169,7 +156,7 @@ class LLMExtractor:
         return True
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:
-        """Extract abbreviations using pattern matching with optional TextBlob enhancement."""
+        
         matches = self.ABBREV_PATTERN.findall(text)
         
         # Deduplicate matches first
@@ -207,10 +194,7 @@ class LLMExtractor:
         return self.abbreviations
     
     def _pattern_find_definition(self, text: str, abbrev: str) -> Optional[str]:
-        """
-        Use pattern matching to find explicit definitions.
-        Fast and reliable for common patterns like \"Full Name (FN)\".
-        """
+        
         candidates = []
         sentences = self._extract_sentences_with_abbrev(text, abbrev)
         
@@ -278,7 +262,7 @@ class LLMExtractor:
         return None
     
     def _extract_sentences_with_abbrev(self, text: str, abbrev: str) -> List[str]:
-        """Extract sentences containing the abbreviation."""
+        
         # Split into sentences (simple approach)
         sentences = re.split(r'[.!?]\s+', text)
         
@@ -294,20 +278,20 @@ class LLMExtractor:
         return relevant[:5]  # Limit to first 5 occurrences
     
     def get_results(self) -> Dict[str, dict]:
-        """Return extracted abbreviations."""
+        
         return self.abbreviations
     
     def clear(self):
-        """Clear all extracted abbreviations."""
+        
         self.abbreviations = {}
     
     @property
     def abbreviations_list(self) -> List[str]:
-        """Return list of abbreviation strings."""
+        
         return list(self.abbreviations.keys())
     
     def get_statistics(self) -> dict:
-        """Get extraction statistics."""
+        
         total = len(self.abbreviations)
         with_def = sum(1 for v in self.abbreviations.values() if v.get('definition'))
         without_def = total - with_def

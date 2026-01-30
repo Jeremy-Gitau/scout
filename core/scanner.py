@@ -1,16 +1,8 @@
-"""
-Scanner module for traversing directories and finding documents.
-Cross-platform file scanning with support for multiple document formats.
-"""
-
 import os
 from pathlib import Path
 from typing import List, Set
 
-
 class Scanner:
-    """Scans directories for supported document files."""
-    
     # Supported file extensions
     SUPPORTED_EXTENSIONS = {'.txt', '.pdf', '.docx', '.doc'}
     
@@ -19,15 +11,7 @@ class Scanner:
         self.total_size: int = 0
         
     def scan_directory(self, directory_path: str) -> List[Path]:
-        """
-        Recursively scan a directory for supported documents.
         
-        Args:
-            directory_path: Path to the directory to scan
-            
-        Returns:
-            List of Path objects for found documents
-        """
         self.files_found = []
         self.total_size = 0
         
@@ -61,15 +45,7 @@ class Scanner:
         return self.files_found
     
     def scan_multiple_directories(self, directory_paths: List[str]) -> List[Path]:
-        """
-        Scan multiple directories and return combined results.
         
-        Args:
-            directory_paths: List of directory paths to scan
-            
-        Returns:
-            Combined list of found documents (duplicates removed)
-        """
         all_files: Set[Path] = set()
         self.total_size = 0
         
@@ -89,12 +65,7 @@ class Scanner:
         return self.files_found
     
     def get_stats(self) -> dict:
-        """
-        Get statistics about the scan.
         
-        Returns:
-            Dictionary with scan statistics
-        """
         return {
             'total_files': len(self.files_found),
             'total_size_bytes': self.total_size,
@@ -103,7 +74,7 @@ class Scanner:
         }
     
     def _count_by_extension(self) -> dict:
-        """Count files by extension."""
+        
         counts = {}
         for file_path in self.files_found:
             ext = file_path.suffix.lower()
@@ -112,13 +83,5 @@ class Scanner:
     
     @staticmethod
     def is_supported_file(file_path: str) -> bool:
-        """
-        Check if a file is supported by Scout.
         
-        Args:
-            file_path: Path to the file
-            
-        Returns:
-            True if file is supported, False otherwise
-        """
         return Path(file_path).suffix.lower() in Scanner.SUPPORTED_EXTENSIONS

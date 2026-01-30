@@ -1,30 +1,14 @@
-"""
-Parser module for reading document content.
-Handles multiple document formats with cross-platform compatibility.
-"""
-
 from pathlib import Path
 from typing import Optional
 import re
 
-
 class Parser:
-    """Parses various document formats and extracts text content."""
-    
     def __init__(self):
         self.current_file: Optional[Path] = None
         self.content: str = ""
     
     def parse_file(self, file_path: Path) -> str:
-        """
-        Parse a document file and extract its text content.
         
-        Args:
-            file_path: Path to the document
-            
-        Returns:
-            Extracted text content
-        """
         self.current_file = file_path
         extension = file_path.suffix.lower()
         
@@ -42,15 +26,7 @@ class Parser:
             return ""
     
     def _parse_txt(self, file_path: Path) -> str:
-        """
-        Parse plain text files with multiple encoding support.
         
-        Args:
-            file_path: Path to the text file
-            
-        Returns:
-            File contents as string
-        """
         # Try common encodings
         encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
         
@@ -68,15 +44,7 @@ class Parser:
         return ""
     
     def _parse_docx(self, file_path: Path) -> str:
-        """
-        Parse DOCX files using python-docx.
         
-        Args:
-            file_path: Path to the DOCX file
-            
-        Returns:
-            Extracted text content
-        """
         try:
             from docx import Document
             
@@ -102,15 +70,7 @@ class Parser:
             return ""
     
     def _parse_pdf(self, file_path: Path) -> str:
-        """
-        Parse PDF files using PyPDF2.
         
-        Args:
-            file_path: Path to the PDF file
-            
-        Returns:
-            Extracted text content
-        """
         try:
             from PyPDF2 import PdfReader
             
@@ -132,15 +92,7 @@ class Parser:
     
     @staticmethod
     def clean_text(text: str) -> str:
-        """
-        Clean and normalize text content.
         
-        Args:
-            text: Raw text content
-            
-        Returns:
-            Cleaned text
-        """
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text)
         
@@ -151,15 +103,7 @@ class Parser:
     
     @staticmethod
     def split_into_sentences(text: str) -> list:
-        """
-        Split text into sentences for better context analysis.
         
-        Args:
-            text: Text to split
-            
-        Returns:
-            List of sentences
-        """
         # Simple sentence splitting
         sentences = re.split(r'[.!?]+', text)
         return [s.strip() for s in sentences if s.strip()]

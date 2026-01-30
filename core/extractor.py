@@ -1,8 +1,3 @@
-"""
-Extractor module for identifying abbreviations and their definitions.
-Uses pattern matching to find acronyms and their expansions.
-"""
-
 import re
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
@@ -53,9 +48,8 @@ except ImportError:
         'EVEN', 'NEW', 'WANT', 'BECAUSE', 'ANY', 'THESE', 'GIVE', 'DAY', 'MOST', 'US',
     }
 
-
 class Extractor:
-    """Extracts abbreviations and definitions from text."""
+    
     
     # Pattern for detecting abbreviations (2-10 uppercase letters, may include numbers)
     ABBREV_PATTERN = re.compile(r'\b[A-Z][A-Z0-9]{1,9}\b')
@@ -106,7 +100,6 @@ class Extractor:
         self.abbreviations: Dict[str, dict] = {}
     
     def _is_likely_abbreviation(self, word: str, text: str) -> bool:
-        """Check if word is likely an abbreviation."""
         excluded = self.get_excluded_words()
         if word in excluded:
             return False
@@ -134,16 +127,7 @@ class Extractor:
         return False
     
     def extract_from_text(self, text: str, source_file: str = "") -> Dict[str, dict]:
-        """
-        Extract abbreviations and their definitions from text.
         
-        Args:
-            text: Text content to analyze
-            source_file: Source file name for tracking
-            
-        Returns:
-            Dictionary of abbreviations with definitions and metadata
-        """
         # Find all potential abbreviations
         matches = self.ABBREV_PATTERN.findall(text)
         
@@ -179,16 +163,7 @@ class Extractor:
         return self.abbreviations
     
     def _find_definition(self, text: str, abbrev: str) -> Optional[str]:
-        """
-        Find the definition for an abbreviation in text.
         
-        Args:
-            text: Text to search
-            abbrev: Abbreviation to find definition for
-            
-        Returns:
-            Definition string or None
-        """
         # Clean the text first - remove markdown headers and multiple newlines
         text = re.sub(r'\n#+\s+.*?\n', '\n', text)  # Remove markdown headers
         text = re.sub(r'\n{2,}', '\n', text)  # Collapse multiple newlines
@@ -240,16 +215,7 @@ class Extractor:
         return None
     
     def _find_first_letter_match(self, text: str, abbrev: str) -> Optional[str]:
-        """
-        Find definition by matching first letters of consecutive words.
         
-        Args:
-            text: Text to search
-            abbrev: Abbreviation
-            
-        Returns:
-            Matched definition or None
-        """
         # Split text into sentences to avoid matching across sentence boundaries
         sentences = re.split(r'[.!?]+', text)
         
@@ -277,15 +243,7 @@ class Extractor:
         return None
     
     def get_sorted_abbreviations(self, sort_by: str = 'alpha') -> List[Tuple[str, dict]]:
-        """
-        Get abbreviations sorted by specified criteria.
         
-        Args:
-            sort_by: Sort criteria ('alpha', 'count', 'files')
-            
-        Returns:
-            List of (abbreviation, info) tuples
-        """
         if sort_by == 'alpha':
             return sorted(self.abbreviations.items())
         elif sort_by == 'count':
@@ -300,15 +258,7 @@ class Extractor:
             return list(self.abbreviations.items())
     
     def filter_abbreviations(self, query: str) -> Dict[str, dict]:
-        """
-        Filter abbreviations by search query.
         
-        Args:
-            query: Search query
-            
-        Returns:
-            Filtered abbreviations dictionary
-        """
         query = query.lower()
         filtered = {}
         
@@ -321,12 +271,7 @@ class Extractor:
         return filtered
     
     def get_statistics(self) -> dict:
-        """
-        Get statistics about extracted abbreviations.
         
-        Returns:
-            Statistics dictionary
-        """
         total = len(self.abbreviations)
         with_definitions = sum(1 for info in self.abbreviations.values() 
                               if info['definition'])
@@ -340,5 +285,5 @@ class Extractor:
         }
     
     def clear(self):
-        """Clear all stored abbreviations."""
+        
         self.abbreviations.clear()

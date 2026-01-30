@@ -1,22 +1,11 @@
 #!/usr/bin/env python3
-"""
-Scout — Explore your files, uncover meaning.
-
-A cross-platform desktop application for discovering abbreviations
-and their definitions in documents.
-
-Author: Scout Team
-Version: 1.0.0
-"""
 
 import sys
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from gui.app_window import ScoutApp
 
-
 def main():
-    """Main entry point for Scout application."""
     # Create root window with modern theme
     root = ttk.Window(
         title="Scout",
@@ -31,7 +20,6 @@ def main():
     # Create and run the application
     app = ScoutApp(root)
     app.run()
-
 
 if __name__ == "__main__":
     try:

@@ -1,23 +1,17 @@
 #!/usr/bin/env python3
-"""
-Scout Setup & Test Script
-Verifies installation and runs a quick test.
-"""
 
 import sys
 import subprocess
 from pathlib import Path
 
-
 def print_header(text):
-    """Print a formatted header."""
+    
     print(f"\n{'=' * 60}")
     print(f"  {text}")
     print(f"{'=' * 60}\n")
 
-
 def check_python_version():
-    """Check if Python version is sufficient."""
+    
     print_header("Checking Python Version")
     
     version = sys.version_info
@@ -30,9 +24,8 @@ def check_python_version():
     print("✅ Python version is compatible")
     return True
 
-
 def install_dependencies():
-    """Install required Python packages."""
+    
     print_header("Installing Dependencies")
     
     packages = [
@@ -57,9 +50,8 @@ def install_dependencies():
         print("\n❌ Failed to install dependencies")
         return False
 
-
 def verify_imports():
-    """Verify that all required modules can be imported."""
+    
     print_header("Verifying Imports")
     
     modules = {
@@ -81,9 +73,8 @@ def verify_imports():
     
     return all_ok
 
-
 def run_test():
-    """Run a quick test of Scout's core functionality."""
+    
     print_header("Running Quick Test")
     
     try:
@@ -132,9 +123,8 @@ def run_test():
         print(f"❌ Test failed: {e}")
         return False
 
-
 def main():
-    """Main setup routine."""
+    
     print("""
     ┌─────────────────────────────────────────┐
     │                                         │
@@ -143,34 +133,7 @@ def main():
     │   Explore your files, uncover meaning   │
     │                                         │
     └─────────────────────────────────────────┘
-    """)
     
-    # Check Python version
-    if not check_python_version():
-        sys.exit(1)
-    
-    # Install dependencies
-    print("\nWould you like to install/update dependencies? (y/n): ", end='')
-    response = input().strip().lower()
-    
-    if response == 'y':
-        if not install_dependencies():
-            sys.exit(1)
-    
-    # Verify imports
-    if not verify_imports():
-        print("\n⚠️  Some modules could not be imported.")
-        print("Please run: pip install -r requirements.txt")
-        sys.exit(1)
-    
-    # Run test
-    if not run_test():
-        sys.exit(1)
-    
-    # Success!
-    print_header("Setup Complete!")
-    
-    print("""
 ✅ Scout is ready to use!
 
 To launch Scout:
@@ -190,7 +153,6 @@ For more information:
 
 Happy exploring! 🔍
     """)
-
 
 if __name__ == "__main__":
     try:

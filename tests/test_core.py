@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Quick test script for Scout functionality."""
 
 from core.scanner import Scanner
 from core.parser import Parser  
