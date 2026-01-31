@@ -1,7 +1,7 @@
 import csv
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from datetime import datetime
 
 class Exporter:
@@ -299,7 +299,7 @@ class Exporter:
     
     def export_batch(self, abbreviations: Dict[str, dict], output_path: str,
                     format: str = 'txt', limit: int = None, 
-                    items_per_file: int = None) -> tuple[bool, List[str]]:
+                    items_per_file: int = None) -> Tuple[bool, List[str]]:
         """
         Export abbreviations with options for limiting and splitting.
         
