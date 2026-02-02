@@ -8,6 +8,30 @@ class Parser:
     def __init__(self):
         self.current_file: Optional[Path] = None
         self.content: str = ""
+        self.current_title: str = ""  # Store extracted title
+    
+    def extract_title(self, file_path: Path) -> str:
+        """Extract the title from a document file"""
+        self.current_file = file_path
+        extension = file_path.suffix.lower()
+        
+        try:
+            if extension == '.txt':
+                return self._extract_title_txt(file_path)
+            elif extension in ['.docx', '.doc']:
+                return self._extract_title_docx(file_path)
+            elif extension == '.pdf':
+                return self._extract_title_pdf(file_path)
+            elif extension in ['.md', '.markdown']:
+                return self._extract_title_markdown(file_path)
+            elif extension in ['.html', '.htm']:
+                return self._extract_title_html(file_path)
+            else:
+                # For unsupported formats, return filename
+                return file_path.stem
+        except Exception as e:
+            print(f"Error extracting title from {file_path}: {e}")
+            return file_path.stem
     
     def parse_file(self, file_path: Path) -> str:
         
@@ -267,3 +291,123 @@ class Parser:
         # Simple sentence splitting
         sentences = re.split(r'[.!?]+', text)
         return [s.strip() for s in sentences if s.strip()]
+    
+    def _extract_title_txt(self, file_path: Path) -> str:
+        """Extract title from text file (first non-empty line)"""
+        encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            # Remove markdown heading markers if present
+                            if line.startswith('#'):
+                                line = line.lstrip('#').strip()
+                            # Return first non-empty line, truncate if too long
+                            return line[:100] if len(line) > 100 else line
+                return file_path.stem
+            except:
+                continue
+        return file_path.stem
+    
+    def _extract_title_markdown(self, file_path: Path) -> str:
+        """Extract title from markdown file (first heading or first line)"""
+        encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            # Check for markdown heading
+                            if line.startswith('#'):
+                                title = line.lstrip('#').strip()
+                                return title[:100] if len(title) > 100 else title
+                            # Otherwise return first line
+                            return line[:100] if len(line) > 100 else line
+                return file_path.stem
+            except:
+                continue
+        return file_path.stem
+    
+    def _extract_title_docx(self, file_path: Path) -> str:
+        """Extract title from DOCX file"""
+        try:
+            from docx import Document
+            
+            doc = Document(str(file_path))
+            
+            # Try to get title from core properties first
+            if doc.core_properties.title:
+                return doc.core_properties.title
+            
+            # Otherwise get first paragraph
+            for paragraph in doc.paragraphs:
+                text = paragraph.text.strip()
+                if text:
+                    return text[:100] if len(text) > 100 else text
+            
+            return file_path.stem
+        except ImportError:
+            return file_path.stem
+        except Exception as e:
+            print(f"Error extracting DOCX title: {e}")
+            return file_path.stem
+    
+    def _extract_title_pdf(self, file_path: Path) -> str:
+        """Extract title from PDF file"""
+        try:
+            from PyPDF2 import PdfReader
+            
+            reader = PdfReader(str(file_path))
+            
+            # Try to get title from metadata first
+            if reader.metadata and reader.metadata.title:
+                return reader.metadata.title
+            
+            # Otherwise get first line of first page
+            if reader.pages:
+                text = reader.pages[0].extract_text()
+                if text:
+                    lines = text.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line:
+                            return line[:100] if len(line) > 100 else line
+            
+            return file_path.stem
+        except ImportError:
+            return file_path.stem
+        except Exception as e:
+            print(f"Error extracting PDF title: {e}")
+            return file_path.stem
+    
+    def _extract_title_html(self, file_path: Path) -> str:
+        """Extract title from HTML file"""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Try to find <title> tag
+            title_match = re.search(r'<title[^>]*>(.*?)</title>', content, re.IGNORECASE | re.DOTALL)
+            if title_match:
+                title = title_match.group(1).strip()
+                # Clean HTML entities and tags
+                title = re.sub(r'<[^>]+>', '', title)
+                title = re.sub(r'&[a-zA-Z]+;', ' ', title)
+                return title[:100] if len(title) > 100 else title
+            
+            # Try to find first h1 tag
+            h1_match = re.search(r'<h1[^>]*>(.*?)</h1>', content, re.IGNORECASE | re.DOTALL)
+            if h1_match:
+                title = h1_match.group(1).strip()
+                title = re.sub(r'<[^>]+>', '', title)
+                return title[:100] if len(title) > 100 else title
+            
+            return file_path.stem
+        except Exception as e:
+            print(f"Error extracting HTML title: {e}")
+            return file_path.stem

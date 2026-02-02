@@ -29,6 +29,7 @@ class ScoutApp:
         self.is_scanning = False
         self.cancel_scan = False  # Flag to cancel ongoing scan
         self.current_results = {}
+        self.file_titles = {}  # Mapping of file paths to titles
         self.log_expanded = False  # Log view collapsed by default
         self.task_panel_expanded = True  # Task panel expanded by default
         self.use_textblob = True  # TextBlob enhancement enabled by default
@@ -594,7 +595,7 @@ class ScoutApp:
         scrollbar.pack(side="right", fill="y")
         
         # Treeview for abbreviation results
-        abbrev_columns = ('abbreviation', 'definition', 'occurrences', 'files')
+        abbrev_columns = ('abbreviation', 'definition', 'occurrences', 'files', 'title')
         self.results_tree = ttk.Treeview(
             table_frame,
             columns=abbrev_columns,
@@ -611,12 +612,14 @@ class ScoutApp:
         self.results_tree.heading('definition', text='Definition')
         self.results_tree.heading('occurrences', text='Count')
         self.results_tree.heading('files', text='Files')
+        self.results_tree.heading('title', text='Title')
         
         # Define column widths
         self.results_tree.column('abbreviation', width=120, anchor="w")
-        self.results_tree.column('definition', width=400, anchor="w")
-        self.results_tree.column('occurrences', width=80, anchor=CENTER)
-        self.results_tree.column('files', width=80, anchor=CENTER)
+        self.results_tree.column('definition', width=250, anchor="w")
+        self.results_tree.column('occurrences', width=60, anchor=CENTER)
+        self.results_tree.column('files', width=60, anchor=CENTER)
+        self.results_tree.column('title', width=200, anchor="w")
         
         self.results_tree.pack(fill="both", expand=True)
         
@@ -958,8 +961,9 @@ class ScoutApp:
             ))
             
             # Step 1: Read all file contents first (fast batch operation)
-            self.root.after(0, lambda: self._log("Phase 1: Reading file contents", "INFO"))
+            self.root.after(0, lambda: self._log("Phase 1: Reading file contents and titles", "INFO"))
             file_contents = []
+            file_titles = {}  # Store titles for each file
             for i, file_path in enumerate(files, 1):
                 # Check if scan was cancelled
                 if self.cancel_scan:
@@ -972,16 +976,19 @@ class ScoutApp:
                 self.root.after(0, lambda idx=i, total=total_files, pct=progress_pct: 
                     self._update_scan_progress(idx, total, pct, "Reading"))
                 
+                # Extract title and content
+                title = self.parser.extract_title(file_path)
                 content = self.parser.parse_file(file_path)
                 file_contents.append((file_path, content))
+                file_titles[str(file_path)] = title
                 
                 # Small sleep to allow cancel flag to be checked
                 time.sleep(0.001)
                 
                 if content:
                     size_kb = len(content) / 1024
-                    self.root.after(0, lambda p=file_path, s=size_kb: 
-                        self._log(f"  Read: {p.name} ({s:.1f} KB)", "DEBUG"))
+                    self.root.after(0, lambda p=file_path, s=size_kb, t=title: 
+                        self._log(f"  Read: {p.name} - \"{t}\" ({s:.1f} KB)", "DEBUG"))
                 else:
                     self.root.after(0, lambda p=file_path: 
                         self._log(f"  Skipped: {p.name} (empty or unreadable)", "WARN"))
@@ -1033,6 +1040,7 @@ class ScoutApp:
             
             # Scanning complete
             self.current_results = self.extractor.abbreviations
+            self.file_titles = file_titles  # Store the file titles mapping
             self.root.after(0, self._scan_complete)
             
         except Exception as e:
@@ -1171,9 +1179,13 @@ class ScoutApp:
             # Handle both formats: new format with 'files' list, old/historical format without
             if 'files' in info:
                 file_count = len(info['files'])
+                # Get the first file's title if available
+                first_file = info['files'][0] if info['files'] else ""
+                title = self.file_titles.get(first_file, "")
             else:
                 # For historical data or simplified format, show N/A or estimate
                 file_count = 1 if count > 0 else 0
+                title = ""
             
             # Alternate row colors
             tag = 'evenrow' if i % 2 == 0 else 'oddrow'
@@ -1181,7 +1193,7 @@ class ScoutApp:
             self.results_tree.insert(
                 '',
                 'end',
-                values=(abbrev, definition, count, file_count),
+                values=(abbrev, definition, count, file_count, title),
                 tags=(tag,)
             )
     
@@ -1660,7 +1672,8 @@ class ScoutApp:
                 filepath, 
                 format,
                 limit=limit,
-                items_per_file=items_per_file
+                items_per_file=items_per_file,
+                file_titles=self.file_titles  # Pass file titles
             )
             
             if success:
@@ -2217,7 +2230,8 @@ class ScoutApp:
             # Get current settings
             settings = {
                 'use_textblob': self.use_textblob,
-                'prefer_llm': getattr(self.extractor, 'prefer_llm', False)
+                'prefer_llm': getattr(self.extractor, 'prefer_llm', False),
+                'file_titles': self.file_titles  # Save file titles mapping
             }
             
             # Save scan
@@ -2408,6 +2422,12 @@ class ScoutApp:
             # Update app state
             self.current_results = scan_data['results']
             self.current_mode = scan_data['scan_type']
+            
+            # Restore file titles if available
+            if 'file_titles' in scan_data.get('settings', {}):
+                self.file_titles = scan_data['settings']['file_titles']
+            else:
+                self.file_titles = {}  # Empty dict for old scans without titles
             
             # Update UI
             if scan_data['source_type'] == 'file':

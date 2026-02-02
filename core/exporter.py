@@ -63,18 +63,20 @@ class Exporter:
             print(f"Error exporting to TXT: {e}")
             return False
     
-    def export_to_csv(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
+    def export_to_csv(self, abbreviations: Dict[str, dict], output_path: str, file_titles: Dict[str, str] = None) -> bool:
        
         try:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            file_titles = file_titles or {}  # Default to empty dict if not provided
             
             with open(output_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 
                 # Header
                 writer.writerow(['Abbreviation', 'Definition', 'Occurrences', 
-                               'File Count', 'Files'])
+                               'File Count', 'Files', 'Document Title'])
                 
                 # Data rows (sorted alphabetically)
                 for abbrev in sorted(abbreviations.keys()):
@@ -84,7 +86,11 @@ class Exporter:
                     file_count = len(info['files'])
                     files = '; '.join(Path(f).name for f in info['files'])
                     
-                    writer.writerow([abbrev, definition, count, file_count, files])
+                    # Get title from first file
+                    first_file = info['files'][0] if info['files'] else ""
+                    title = file_titles.get(first_file, "")
+                    
+                    writer.writerow([abbrev, definition, count, file_count, files, title])
             
             self.last_export_path = output_file
             return True
@@ -299,7 +305,7 @@ class Exporter:
     
     def export_batch(self, abbreviations: Dict[str, dict], output_path: str,
                     format: str = 'txt', limit: int = None, 
-                    items_per_file: int = None) -> Tuple[bool, List[str]]:
+                    items_per_file: int = None, file_titles: Dict[str, str] = None) -> Tuple[bool, List[str]]:
         """
         Export abbreviations with options for limiting and splitting.
         
@@ -344,7 +350,7 @@ class Exporter:
                     batch_path = output_file
                 
                 # Export this batch
-                success = self._export_single(batch, str(batch_path), format)
+                success = self._export_single(batch, str(batch_path), format, file_titles)
                 
                 if not success:
                     return False, created_files
@@ -363,14 +369,14 @@ class Exporter:
             return False, []
     
     def _export_single(self, abbreviations: Dict[str, dict], 
-                      output_path: str, format: str) -> bool:
+                      output_path: str, format: str, file_titles: Dict[str, str] = None) -> bool:
         """Export a single batch of abbreviations"""
         format = format.lower()
         
         if format == 'txt':
             return self.export_to_txt(abbreviations, output_path)
         elif format == 'csv':
-            return self.export_to_csv(abbreviations, output_path)
+            return self.export_to_csv(abbreviations, output_path, file_titles)
         elif format == 'json':
             return self.export_to_json(abbreviations, output_path)
         elif format in ['xlsx', 'excel']:
