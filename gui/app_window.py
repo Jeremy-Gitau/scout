@@ -1,5 +1,3 @@
-
-
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 import ttkbootstrap as ttk
@@ -10,12 +8,12 @@ import time
 import logging
 import datetime
 from typing import Optional
-
 from core.scanner import Scanner
 from core.parser import Parser
 from core.smart_extractor import SmartExtractor
 from core.exporter import Exporter
 from core.duplicate_handler import DuplicateHandler
+from core.history_manager import HistoryManager
 
 class ScoutApp:
     
@@ -54,6 +52,7 @@ class ScoutApp:
         self.parser = Parser()
         self.extractor = SmartExtractor(prefer_llm=False, use_textblob=self.use_textblob)
         self.exporter = Exporter()
+        self.history_manager = HistoryManager()
         
         self._log("Scout initialized with fast pattern matching", "INFO")
         
@@ -341,6 +340,15 @@ class ScoutApp:
         )
         self.scan_btn.pack(side="left", padx=(0, 10))
         self.scan_btn.configure(state="disabled")
+        
+        self.history_btn = ttk.Button(
+            abbrev_button_frame,
+            text="📚 History",
+            command=self._show_history_dialog,
+            bootstyle="secondary-outline",
+            width=15
+        )
+        self.history_btn.pack(side="left", padx=(0, 10))
         
         self.export_btn = ttk.Button(
             abbrev_button_frame,
@@ -1048,6 +1056,9 @@ class ScoutApp:
         self._log(f"Without definitions: {stats['without_definitions']}", "INFO")
         self._log(f"Coverage: {stats['coverage_percent']}%", "INFO")
         
+        # Auto-save to history
+        self._save_to_history()
+        
         self.stats_label.config(
             text=f"Found {stats['total_abbreviations']} abbreviations | "
                  f"{stats['with_definitions']} with definitions | "
@@ -1065,9 +1076,11 @@ class ScoutApp:
             self.export_btn.configure(state="normal")
             self.clear_btn.configure(state="normal")
         
+        # Show completion message with history save status
+        history_msg = "\n\nScan saved to history. Click 📚 History to view all scans."
         messagebox.showinfo(
             "Scan Complete",
-            f"Found {stats['total_abbreviations']} abbreviations in {self.scanner.get_stats()['total_files']} files!"
+            f"Found {stats['total_abbreviations']} abbreviations in {self.scanner.get_stats()['total_files']} files!{history_msg}"
         )
     
     def _scan_cancelled(self):
@@ -1152,9 +1165,15 @@ class ScoutApp:
         
         # Add results
         for i, (abbrev, info) in enumerate(sorted(results.items())):
-            definition = info['definition'] or "Definition not found"
-            count = info['count']
-            file_count = len(info['files'])
+            definition = info.get('definition') or info.get('expanded') or "Definition not found"
+            count = info.get('count', 0)
+            
+            # Handle both formats: new format with 'files' list, old/historical format without
+            if 'files' in info:
+                file_count = len(info['files'])
+            else:
+                # For historical data or simplified format, show N/A or estimate
+                file_count = 1 if count > 0 else 0
             
             # Alternate row colors
             tag = 'evenrow' if i % 2 == 0 else 'oddrow'
@@ -2176,6 +2195,306 @@ class ScoutApp:
         
         self._log(f"Copied {len(self.duplicate_preview_data)} duplicate results to clipboard", "INFO")
         messagebox.showinfo("Copied", f"Successfully copied {len(self.duplicate_preview_data)} duplicate results to clipboard!")
+    
+    def _save_to_history(self):
+        """Save current scan results to history database"""
+        try:
+            if not self.current_results:
+                self._log("No results to save to history", "WARNING")
+                return
+            
+            # Determine source path and type
+            if self.selected_file:
+                source_path = self.selected_file
+                source_type = "file"
+            elif self.selected_directory:
+                source_path = self.selected_directory
+                source_type = "directory"
+            else:
+                self._log("No source path available for history save", "WARNING")
+                return
+            
+            # Get current settings
+            settings = {
+                'use_textblob': self.use_textblob,
+                'prefer_llm': getattr(self.extractor, 'prefer_llm', False)
+            }
+            
+            # Save scan
+            scan_id = self.history_manager.save_scan(
+                scan_type=self.current_mode,
+                source_path=source_path,
+                source_type=source_type,
+                results=self.current_results,
+                settings=settings
+            )
+            
+            self._log(f"✓ Saved scan to history (ID: {scan_id})", "INFO")
+            return scan_id
+        except Exception as e:
+            self._log(f"✗ Failed to save scan to history: {e}", "ERROR")
+            import traceback
+            self._log(f"Traceback: {traceback.format_exc()}", "ERROR")
+            return None
+    
+    def _show_history_dialog(self):
+        """Show scan history dialog"""
+        history_window = tk.Toplevel(self.root)
+        history_window.title("Scan History")
+        history_window.geometry("900x600")
+        history_window.transient(self.root)
+        
+        # Main container
+        container = ttk.Frame(history_window, padding=20)
+        container.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            container,
+            text="📚 Scan History",
+            font=("Helvetica", 16, "bold")
+        ).pack(pady=(0, 15))
+        
+        # Statistics frame
+        stats_frame = ttk.Frame(container)
+        stats_frame.pack(fill="x", pady=(0, 15))
+        
+        stats = self.history_manager.get_statistics()
+        
+        ttk.Label(
+            stats_frame,
+            text=f"Total Scans: {stats.get('total_scans', 0)}  |  "
+                 f"Total Results: {stats.get('total_results', 0)}",
+            font=("Helvetica", 10),
+            bootstyle="info"
+        ).pack()
+        
+        # Search frame
+        search_frame = ttk.Frame(container)
+        search_frame.pack(fill="x", pady=(0, 10))
+        
+        ttk.Label(search_frame, text="Search:").pack(side="left", padx=(0, 5))
+        
+        search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=search_var, width=40)
+        search_entry.pack(side="left", padx=(0, 5))
+        
+        def do_search():
+            query = search_var.get().strip()
+            if query:
+                scans = self.history_manager.search_scans(query)
+            else:
+                scans = self.history_manager.get_recent_scans(limit=50)
+            update_history_list(scans)
+        
+        ttk.Button(
+            search_frame,
+            text="🔍 Search",
+            command=do_search,
+            bootstyle="primary-outline"
+        ).pack(side="left", padx=(0, 5))
+        
+        ttk.Button(
+            search_frame,
+            text="🔄 Refresh",
+            command=lambda: update_history_list(self.history_manager.get_recent_scans(limit=50)),
+            bootstyle="secondary-outline"
+        ).pack(side="left")
+        
+        # History list frame with scrollbar
+        list_frame = ttk.Frame(container)
+        list_frame.pack(fill="both", expand=True, pady=(0, 10))
+        
+        # Create Treeview for history
+        columns = ("ID", "Type", "Source", "Date", "Results")
+        history_tree = ttk.Treeview(
+            list_frame,
+            columns=columns,
+            show="headings",
+            height=15,
+            bootstyle="primary"
+        )
+        
+        # Configure columns with better sizing
+        history_tree.heading("ID", text="ID")
+        history_tree.heading("Type", text="Type")
+        history_tree.heading("Source", text="Source Path")
+        history_tree.heading("Date", text="Date")
+        history_tree.heading("Results", text="Results")
+        
+        history_tree.column("ID", width=60, minwidth=50, anchor="center", stretch=False)
+        history_tree.column("Type", width=120, minwidth=100, anchor="center", stretch=False)
+        history_tree.column("Source", width=350, minwidth=200, stretch=True)
+        history_tree.column("Date", width=150, minwidth=120, anchor="center", stretch=False)
+        history_tree.column("Results", width=80, minwidth=60, anchor="center", stretch=False)
+        
+        # Add zebra striping for better visibility
+        history_tree.tag_configure('oddrow', background='#f0f0f0')
+        history_tree.tag_configure('evenrow', background='white')
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=history_tree.yview)
+        history_tree.configure(yscrollcommand=scrollbar.set)
+        
+        history_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        def update_history_list(scans):
+            """Update the history tree with scans"""
+            # Clear existing items
+            for item in history_tree.get_children():
+                history_tree.delete(item)
+            
+            # Add scans
+            if not scans:
+                # Show empty state message
+                history_tree.insert("", "end", values=(
+                    "-",
+                    "-",
+                    "No scan history found. Run a scan to create history!",
+                    "-",
+                    "-"
+                ))
+                return
+            
+            for scan in scans:
+                # Format date
+                try:
+                    date_obj = datetime.datetime.fromisoformat(scan['scan_date'])
+                    date_str = date_obj.strftime("%Y-%m-%d %H:%M")
+                except:
+                    date_str = scan['scan_date']
+                
+                # Shorten path for display
+                source_path = scan['source_path']
+                if len(source_path) > 50:
+                    source_path = "..." + source_path[-47:]
+                
+                # Determine row index for alternating colors
+                row_index = len(history_tree.get_children())
+                tag = 'evenrow' if row_index % 2 == 0 else 'oddrow'
+                
+                history_tree.insert("", "end", values=(
+                    scan['id'],
+                    scan['scan_type'].title(),
+                    source_path,
+                    date_str,
+                    scan['total_results']
+                ), tags=(tag,))
+        
+        # Load initial history
+        update_history_list(self.history_manager.get_recent_scans(limit=50))
+        
+        # Action buttons frame
+        button_frame = ttk.Frame(container)
+        button_frame.pack(fill="x")
+        
+        def load_selected_scan():
+            """Load the selected scan"""
+            selection = history_tree.selection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a scan to load.")
+                return
+            
+            item = history_tree.item(selection[0])
+            scan_id = item['values'][0]
+            
+            # Load scan from database
+            scan_data = self.history_manager.load_scan(scan_id)
+            if not scan_data:
+                messagebox.showerror("Error", "Failed to load scan data.")
+                return
+            
+            # Update app state
+            self.current_results = scan_data['results']
+            self.current_mode = scan_data['scan_type']
+            
+            # Update UI
+            if scan_data['source_type'] == 'file':
+                self.selected_file = scan_data['source_path']
+                self.selected_directory = None
+                self.dir_label.config(text=f"File: {Path(scan_data['source_path']).name}")
+            else:
+                self.selected_directory = scan_data['source_path']
+                self.selected_file = None
+                self.dir_label.config(text=f"Folder: {Path(scan_data['source_path']).name}")
+            
+            # Switch mode if needed
+            if self.current_mode != scan_data['scan_type']:
+                self._switch_mode(scan_data['scan_type'])
+            
+            # Display results
+            self._display_results(self.current_results)
+            
+            # Log
+            self._log(f"Loaded scan #{scan_id} from history", "INFO")
+            self._log(f"Source: {scan_data['source_path']}", "INFO")
+            self._log(f"Results: {len(self.current_results)} items", "INFO")
+            
+            history_window.destroy()
+            messagebox.showinfo("Success", f"Loaded scan from {scan_data['scan_date'][:10]}")
+        
+        def delete_selected_scan():
+            """Delete the selected scan"""
+            selection = history_tree.selection()
+            if not selection:
+                messagebox.showwarning("No Selection", "Please select a scan to delete.")
+                return
+            
+            item = history_tree.item(selection[0])
+            scan_id = item['values'][0]
+            
+            # Confirm deletion
+            if messagebox.askyesno("Confirm Delete", 
+                                   f"Are you sure you want to delete scan #{scan_id}?"):
+                if self.history_manager.delete_scan(scan_id):
+                    update_history_list(self.history_manager.get_recent_scans(limit=50))
+                    self._log(f"Deleted scan #{scan_id} from history", "INFO")
+                else:
+                    messagebox.showerror("Error", "Failed to delete scan.")
+        
+        def clear_all_history():
+            """Clear all scan history"""
+            if messagebox.askyesno("Confirm Clear All", 
+                                   "Are you sure you want to delete ALL scan history?\n\n"
+                                   "This action cannot be undone!",
+                                   icon='warning'):
+                deleted = self.history_manager.clear_history()
+                update_history_list([])
+                self._log(f"Cleared all history ({deleted} scans)", "INFO")
+                messagebox.showinfo("Success", f"Deleted {deleted} scans from history.")
+        
+        ttk.Button(
+            button_frame,
+            text="📂 Load Selected",
+            command=load_selected_scan,
+            bootstyle="success",
+            width=15
+        ).pack(side="left", padx=(0, 5))
+        
+        ttk.Button(
+            button_frame,
+            text="🗑️ Delete Selected",
+            command=delete_selected_scan,
+            bootstyle="danger-outline",
+            width=15
+        ).pack(side="left", padx=(0, 5))
+        
+        ttk.Button(
+            button_frame,
+            text="🗑️ Clear All",
+            command=clear_all_history,
+            bootstyle="danger",
+            width=15
+        ).pack(side="left", padx=(0, 5))
+        
+        ttk.Button(
+            button_frame,
+            text="Close",
+            command=history_window.destroy,
+            bootstyle="secondary",
+            width=12
+        ).pack(side="right")
     
     def run(self):
         
