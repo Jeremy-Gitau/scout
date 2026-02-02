@@ -1417,8 +1417,8 @@ class ScoutApp:
         ).pack(pady=(0, 10))
         
         # Export options frame
-        options_frame = ttk.LabelFrame(container, text="Export Settings", padding=15)
-        options_frame.pack(fill="x", pady=(0, 20))
+        options_frame = ttk.LabelFrame(container, text="Export Settings")
+        options_frame.pack(fill="x", pady=(0, 20), padx=15, ipady=15, ipadx=15)
         
         # Total abbreviations info
         total_abbrevs = len(self.current_results) if self.current_results else 0
