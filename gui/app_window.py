@@ -3049,16 +3049,17 @@ class ScoutApp:
         self.status_label.config(text=f"Extraction complete: {folder_name}")
     
     def _export_entities(self):
-        """Show entity export dialog with options"""
+        """Show streamlined entity export dialog"""
         if not self.entity_results:
             messagebox.showwarning("No Results", "No entity extraction results to export.")
             return
         
         export_window = tk.Toplevel(self.root)
         export_window.title("Export Entities")
-        export_window.geometry("520x750")
+        export_window.geometry("650x480")
         export_window.transient(self.root)
         export_window.grab_set()
+        export_window.configure(bg="#f0f0f0")
         
         # Center dialog
         export_window.update_idletasks()
@@ -3066,177 +3067,159 @@ class ScoutApp:
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (export_window.winfo_height() // 2)
         export_window.geometry(f"+{x}+{y}")
         
-        # Create scrollable frame
-        canvas = tk.Canvas(export_window, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(export_window, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+        # Main container
+        main_frame = ttk.Frame(export_window, padding=25)
+        main_frame.pack(fill="both", expand=True)
         
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-        
-        # Enable mousewheel scrolling
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        container = ttk.Frame(scrollable_frame, padding=(20, 20, 20, 20))
-        container.pack(fill="both", expand=True)
+        # Header with icon
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 20))
         
         ttk.Label(
-            container,
-            text="Export Entities",
-            font=("Helvetica", 14, "bold")
-        ).pack(pady=(0, 10))
+            header_frame,
+            text="💾 Export Your Entities",
+            font=("Helvetica", 20, "bold"),
+            bootstyle="primary"
+        ).pack()
         
-        # Export options frame
-        options_frame = ttk.LabelFrame(container, text="Export Settings")
-        options_frame.pack(fill="x", pady=(0, 20), padx=15, ipady=15, ipadx=15)
+        ttk.Label(
+            header_frame,
+            text="Choose your preferred format to save the extracted entities",
+            font=("Helvetica", 10),
+            bootstyle="secondary"
+        ).pack(pady=(5, 0))
         
-        # Entity counts
-        total_people = len(self.entity_results.get('enriched_people', []))
-        total_orgs = len(self.entity_results.get('organizations', []))
-        total_locations = len(self.entity_results.get('locations', []))
+        # Entity counts summary (count unique entities only)
+        # Deduplicate people
+        people_seen = set()
+        unique_people = []
+        for p in self.entity_results.get('enriched_people', []) + self.entity_results.get('people', []):
+            if p.name.lower() not in people_seen:
+                people_seen.add(p.name.lower())
+                unique_people.append(p)
+        
+        # Deduplicate organizations
+        orgs_seen = set()
+        unique_orgs = []
+        for o in self.entity_results.get('organizations', []):
+            if o.name.lower() not in orgs_seen:
+                orgs_seen.add(o.name.lower())
+                unique_orgs.append(o)
+        
+        # Deduplicate locations
+        locs_seen = set()
+        unique_locs = []
+        for l in self.entity_results.get('locations', []):
+            if l.name.lower() not in locs_seen:
+                locs_seen.add(l.name.lower())
+                unique_locs.append(l)
+        
+        total_people = len(unique_people)
+        total_orgs = len(unique_orgs)
+        total_locations = len(unique_locs)
         total_entities = total_people + total_orgs + total_locations
         
-        info_text = f"Total entities: {total_entities}\n"
-        info_text += f"  • People: {total_people}\n"
-        info_text += f"  • Organizations: {total_orgs}\n"
-        info_text += f"  • Locations: {total_locations}"
+        # Summary stats cards
+        stats_frame = ttk.Frame(main_frame)
+        stats_frame.pack(fill="x", pady=(0, 25))
+        
+        # Create stat cards
+        for idx, (icon, label, count, color) in enumerate([
+            ("👥", "People", total_people, "primary"),
+            ("🏢", "Organizations", total_orgs, "info"),
+            ("🌍", "Locations", total_locations, "success")
+        ]):
+            card = ttk.Frame(stats_frame, bootstyle=color, relief="raised")
+            card.grid(row=0, column=idx, padx=8, sticky="ew")
+            stats_frame.columnconfigure(idx, weight=1)
+            
+            ttk.Label(
+                card,
+                text=icon,
+                font=("Helvetica", 28)
+            ).pack(pady=(15, 5))
+            
+            ttk.Label(
+                card,
+                text=str(count),
+                font=("Helvetica", 24, "bold"),
+                bootstyle=color
+            ).pack()
+            
+            ttk.Label(
+                card,
+                text=label,
+                font=("Helvetica", 10)
+            ).pack(pady=(0, 15))
+        
+        # Total count banner
+        total_frame = ttk.Frame(main_frame, bootstyle="secondary", relief="solid")
+        total_frame.pack(fill="x", pady=(0, 25))
         
         ttk.Label(
-            options_frame,
-            text=info_text,
-            font=("Helvetica", 10, "bold"),
-            bootstyle="info",
-            justify="left"
-        ).pack(pady=(0, 15), anchor="w")
+            total_frame,
+            text=f"📊 Total: {total_entities} entities ready to export",
+            font=("Helvetica", 12, "bold"),
+            bootstyle="inverse-secondary"
+        ).pack(pady=12)
         
-        # Include options
-        include_frame = ttk.LabelFrame(options_frame, text="Include in Export")
-        include_frame.pack(fill="x", pady=(0, 15))
-        
-        include_people_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            include_frame,
-            text=f"People ({total_people})",
-            variable=include_people_var,
-            bootstyle="primary-round-toggle"
-        ).pack(anchor="w", padx=10, pady=3)
-        
-        include_orgs_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            include_frame,
-            text=f"Organizations ({total_orgs})",
-            variable=include_orgs_var,
-            bootstyle="primary-round-toggle"
-        ).pack(anchor="w", padx=10, pady=3)
-        
-        include_locations_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            include_frame,
-            text=f"Locations ({total_locations})",
-            variable=include_locations_var,
-            bootstyle="primary-round-toggle"
-        ).pack(anchor="w", padx=10, pady=3)
-        
-        # Confidence filter
-        confidence_frame = ttk.LabelFrame(options_frame, text="Confidence Filter")
-        confidence_frame.pack(fill="x", pady=(0, 15))
-        
-        include_high_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            confidence_frame,
-            text="High confidence",
-            variable=include_high_var,
-            bootstyle="success-round-toggle"
-        ).pack(anchor="w", padx=10, pady=3)
-        
-        include_medium_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            confidence_frame,
-            text="Medium confidence",
-            variable=include_medium_var,
-            bootstyle="warning-round-toggle"
-        ).pack(anchor="w", padx=10, pady=3)
-        
-        include_low_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            confidence_frame,
-            text="Low confidence",
-            variable=include_low_var,
-            bootstyle="danger-round-toggle"
-        ).pack(anchor="w", padx=10, pady=3)
-        
-        # Store variables for export function access
-        export_window.include_people_var = include_people_var
-        export_window.include_orgs_var = include_orgs_var
-        export_window.include_locations_var = include_locations_var
-        export_window.include_high_var = include_high_var
-        export_window.include_medium_var = include_medium_var
-        export_window.include_low_var = include_low_var
-        
-        # Format selection
+        # Format selection section
         ttk.Label(
-            container,
+            main_frame,
             text="Select Export Format",
-            font=("Helvetica", 12, "bold")
-        ).pack(pady=(10, 10))
+            font=("Helvetica", 14, "bold")
+        ).pack(pady=(0, 15))
         
-        # Export format buttons
+        # Format cards grid
+        format_frame = ttk.Frame(main_frame)
+        format_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        formats = [
+            ("json", "📋 JSON", "Structured data\nfor developers", "primary", "Ideal for APIs & code"),
+            ("csv", "📊 CSV", "Spreadsheet format\nfor analysis", "info", "Open in Excel, Numbers"),
+            ("xlsx", "📗 Excel", "Rich formatting\nwith styling", "success", "Best for presentation"),
+            ("txt", "📄 Text", "Human-readable\nformatted report", "secondary", "Easy to read & share")
+        ]
+        
+        # Store variables (even though we're using extraction settings)
+        export_window.include_people_var = tk.BooleanVar(value=self.extract_people_var.get())
+        export_window.include_orgs_var = tk.BooleanVar(value=self.extract_orgs_var.get())
+        export_window.include_locations_var = tk.BooleanVar(value=self.extract_locations_var.get())
+        export_window.include_high_var = tk.BooleanVar(value=True)
+        export_window.include_medium_var = tk.BooleanVar(value=True)
+        export_window.include_low_var = tk.BooleanVar(value=not self.show_low_confidence_var.get())
+        
+        for idx, (fmt, title, desc, color, subtitle) in enumerate(formats):
+            row = idx // 2
+            col = idx % 2
+            
+            btn_frame = ttk.Frame(format_frame)
+            btn_frame.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
+            format_frame.columnconfigure(col, weight=1)
+            format_frame.rowconfigure(row, weight=1)
+            
+            btn = ttk.Button(
+                btn_frame,
+                text=f"{title}\n\n{desc}\n━━━━━━━\n{subtitle}",
+                command=lambda f=fmt: self._export_entities_with_options(f, export_window),
+                bootstyle=f"{color}",
+                width=28
+            )
+            btn.pack(fill="both", expand=True, ipady=10)
+        
+        # Bottom action bar
+        action_frame = ttk.Frame(main_frame)
+        action_frame.pack(fill="x", pady=(15, 0))
+        
         ttk.Button(
-            container,
-            text="📄 Export as Text (.txt)",
-            command=lambda: self._export_entities_with_options('txt', export_window),
-            bootstyle="success",
-            width=30
-        ).pack(pady=5)
+            action_frame,
+            text="✕ Cancel",
+            command=export_window.destroy,
+            bootstyle="secondary-outline",
+            width=15
+        ).pack(side="right")
         
-        ttk.Button(
-            container,
-            text="📊 Export as CSV (.csv)",
-            command=lambda: self._export_entities_with_options('csv', export_window),
-            bootstyle="info",
-            width=30
-        ).pack(pady=5)
-        
-        ttk.Button(
-            container,
-            text="📋 Export as JSON (.json)",
-            command=lambda: self._export_entities_with_options('json', export_window),
-            bootstyle="primary",
-            width=30
-        ).pack(pady=5)
-        
-        ttk.Button(
-            container,
-            text="📗 Export as Excel (.xlsx)",
-            command=lambda: self._export_entities_with_options('xlsx', export_window),
-            bootstyle="success-outline",
-            width=30
-        ).pack(pady=5)
-        
-        # Cleanup function
-        def on_close():
-            canvas.unbind_all("<MouseWheel>")
-            export_window.destroy()
-        
-        ttk.Button(
-            container,
-            text="Cancel",
-            command=on_close,
-            bootstyle="secondary",
-            width=30
-        ).pack(pady=(20, 0))
-        
-        export_window.protocol("WM_DELETE_WINDOW", on_close)
+        export_window.protocol("WM_DELETE_WINDOW", export_window.destroy)
     
     def _export_entities_with_options(self, format: str, dialog):
         """Export entities with selected options and smart file naming"""
