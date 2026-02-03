@@ -1428,7 +1428,7 @@ class ScoutApp:
         
         export_window = tk.Toplevel(self.root)
         export_window.title("Export Report")
-        export_window.geometry("500x600")
+        export_window.geometry("520x650")
         export_window.transient(self.root)
         export_window.grab_set()
         
@@ -1438,7 +1438,29 @@ class ScoutApp:
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (export_window.winfo_height() // 2)
         export_window.geometry(f"+{x}+{y}")
         
-        container = ttk.Frame(export_window, padding=(20, 20, 20, 20))
+        # Create a canvas with scrollbar for better compatibility across platforms
+        canvas = tk.Canvas(export_window, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(export_window, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack scrollbar and canvas
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        container = ttk.Frame(scrollable_frame, padding=(20, 20, 20, 20))
         container.pack(fill="both", expand=True)
         
         ttk.Label(
@@ -1614,13 +1636,21 @@ class ScoutApp:
             width=30
         ).pack(pady=5)
         
+        # Cleanup function for mousewheel binding
+        def on_close():
+            canvas.unbind_all("<MouseWheel>")
+            export_window.destroy()
+        
         ttk.Button(
             container,
             text="Cancel",
-            command=export_window.destroy,
+            command=on_close,
             bootstyle="secondary",
             width=30
         ).pack(pady=(20, 0))
+        
+        # Bind cleanup to window close
+        export_window.protocol("WM_DELETE_WINDOW", on_close)
     
     def _export_with_options(self, format: str, dialog):
         """Export with limit and split options"""
