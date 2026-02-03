@@ -7,6 +7,7 @@ import threading
 import time
 import logging
 import datetime
+import os
 from typing import Optional
 from core.scanner import Scanner
 from core.parser import Parser
@@ -14,6 +15,7 @@ from core.smart_extractor import SmartExtractor
 from core.exporter import Exporter
 from core.duplicate_handler import DuplicateHandler
 from core.history_manager import HistoryManager
+from core.entity_extractor import EntityExtractor
 
 class ScoutApp:
     
@@ -42,8 +44,14 @@ class ScoutApp:
         self.move_to_trash = True  # Default to move to trash instead of delete
         self.duplicate_preview_data = []  # Store preview data
         
+        # Entity extraction state
+        self.is_extracting_entities = False
+        self.use_llm_extraction = False  # LLM extraction (requires API key)
+        self.entity_results = {}  # Store entity extraction results
+        self.openai_api_key = None  # OpenAI API key
+        
         # Mode state
-        self.current_mode = "abbreviations"  # 'abbreviations' or 'duplicates'
+        self.current_mode = "abbreviations"  # 'abbreviations', 'duplicates', or 'entities'
         
         # Setup logging
         self._setup_logging()
@@ -54,6 +62,7 @@ class ScoutApp:
         self.extractor = SmartExtractor(prefer_llm=False, use_textblob=self.use_textblob)
         self.exporter = Exporter()
         self.history_manager = HistoryManager()
+        self.entity_extractor = None  # Initialized when needed
         
         self._log("Scout initialized with fast pattern matching", "INFO")
         
@@ -269,7 +278,16 @@ class ScoutApp:
             bootstyle="secondary-outline",
             width=18
         )
-        self.dedupe_mode_btn.pack(side="left")
+        self.dedupe_mode_btn.pack(side="left", padx=(0, 5))
+        
+        self.entity_mode_btn = ttk.Button(
+            mode_frame,
+            text="👥 Entities",
+            command=lambda: self._switch_mode("entities"),
+            bootstyle="secondary-outline",
+            width=18
+        )
+        self.entity_mode_btn.pack(side="left")
     
     def _create_control_panel(self, parent):
         control_frame = ttk.LabelFrame(
@@ -514,6 +532,123 @@ class ScoutApp:
         self.open_folder_btn.pack(side="left")
         self.open_folder_btn.configure(state="disabled")
         
+        # === ENTITY EXTRACTION MODE CONTROLS ===
+        self.entity_controls = ttk.Frame(inner_frame)
+        
+        # API Key configuration
+        api_frame = ttk.Frame(self.entity_controls)
+        api_frame.pack(fill='x', pady=(0, 10))
+        
+        ttk.Label(
+            api_frame,
+            text="OpenAI API Key (optional, for LLM extraction):",
+            font=("Helvetica", 10, "bold")
+        ).pack(side="left", padx=(0, 10))
+        
+        self.api_key_var = tk.StringVar()
+        api_entry = ttk.Entry(
+            api_frame,
+            textvariable=self.api_key_var,
+            font=("Helvetica", 10),
+            show="•",  # Mask the API key
+            width=30
+        )
+        api_entry.pack(side="left", padx=(0, 10))
+        
+        self.use_llm_var = tk.BooleanVar(value=False)
+        llm_check = ttk.Checkbutton(
+            api_frame,
+            text="🤖 Use LLM (higher accuracy)",
+            variable=self.use_llm_var,
+            bootstyle="info-round-toggle",
+            command=self._update_entity_settings
+        )
+        llm_check.pack(side="left", padx=(0, 10))
+        
+        ttk.Button(
+            api_frame,
+            text="💾 Save Key",
+            command=self._save_api_key,
+            bootstyle="success-outline",
+            width=12
+        ).pack(side="left")
+        
+        # Entity extraction options
+        entity_options_frame = ttk.Frame(self.entity_controls)
+        entity_options_frame.pack(fill='x', pady=(0, 10))
+        
+        ttk.Label(
+            entity_options_frame,
+            text="Extract:",
+            font=("Helvetica", 10, "bold")
+        ).pack(side="left", padx=(0, 10))
+        
+        self.extract_people_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            entity_options_frame,
+            text="👤 People",
+            variable=self.extract_people_var,
+            bootstyle="primary-round-toggle"
+        ).pack(side="left", padx=(0, 10))
+        
+        self.extract_orgs_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            entity_options_frame,
+            text="🏢 Organizations",
+            variable=self.extract_orgs_var,
+            bootstyle="primary-round-toggle"
+        ).pack(side="left", padx=(0, 10))
+        
+        self.extract_locations_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            entity_options_frame,
+            text="🌍 Locations",
+            variable=self.extract_locations_var,
+            bootstyle="primary-round-toggle"
+        ).pack(side="left", padx=(0, 10))
+        
+        self.show_low_confidence_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            entity_options_frame,
+            text="⚠️ Show low confidence",
+            variable=self.show_low_confidence_var,
+            bootstyle="warning-round-toggle"
+        ).pack(side="left")
+        
+        # Action buttons for entity extraction
+        entity_button_frame = ttk.Frame(self.entity_controls)
+        entity_button_frame.pack(fill="x")
+        
+        self.extract_entities_btn = ttk.Button(
+            entity_button_frame,
+            text="🔍 Extract Entities",
+            command=self._start_entity_extraction,
+            bootstyle="success",
+            width=25
+        )
+        self.extract_entities_btn.pack(side="left", padx=(0, 10))
+        self.extract_entities_btn.configure(state="disabled")
+        
+        self.export_entities_btn = ttk.Button(
+            entity_button_frame,
+            text="💾 Export Entities",
+            command=self._export_entities,
+            bootstyle="info-outline",
+            width=25
+        )
+        self.export_entities_btn.pack(side="left", padx=(0, 10))
+        self.export_entities_btn.configure(state="disabled")
+        
+        self.clear_entities_btn = ttk.Button(
+            entity_button_frame,
+            text="🗑️ Clear Results",
+            command=self._clear_entity_results,
+            bootstyle="secondary-outline",
+            width=20
+        )
+        self.clear_entities_btn.pack(side="left")
+        self.clear_entities_btn.configure(state="disabled")
+        
         # Common cancel button (for both modes)
         self.cancel_btn_scan = ttk.Button(
             inner_frame,
@@ -658,6 +793,39 @@ class ScoutApp:
         
         # Bind selection for duplicates tree
         self.duplicates_tree.bind('<<TreeviewSelect>>', self._on_duplicate_selected)
+        
+        # Treeview for entity extraction results
+        entity_columns = ('name', 'type', 'role', 'organization', 'country', 'confidence', 'completeness')
+        self.entities_tree = ttk.Treeview(
+            table_frame,
+            columns=entity_columns,
+            show='headings',
+            yscrollcommand=scrollbar.set,
+            bootstyle="success"
+        )
+        
+        # Define headings for entities
+        self.entities_tree.heading('name', text='Name')
+        self.entities_tree.heading('type', text='Type')
+        self.entities_tree.heading('role', text='Role')
+        self.entities_tree.heading('organization', text='Organization')
+        self.entities_tree.heading('country', text='Country')
+        self.entities_tree.heading('confidence', text='Confidence')
+        self.entities_tree.heading('completeness', text='Complete')
+        
+        # Define column widths
+        self.entities_tree.column('name', width=200, anchor="w")
+        self.entities_tree.column('type', width=100, anchor="w")
+        self.entities_tree.column('role', width=150, anchor="w")
+        self.entities_tree.column('organization', width=200, anchor="w")
+        self.entities_tree.column('country', width=120, anchor="w")
+        self.entities_tree.column('confidence', width=90, anchor=CENTER)
+        self.entities_tree.column('completeness', width=90, anchor=CENTER)
+        
+        # Tag configuration for confidence levels
+        self.entities_tree.tag_configure('high_confidence', background='#d4edda')
+        self.entities_tree.tag_configure('medium_confidence', background='#fff3cd')
+        self.entities_tree.tag_configure('low_confidence', background='#f8d7da')
     
     def _create_log_section(self, parent):
         
@@ -762,6 +930,7 @@ class ScoutApp:
             self.dir_label.config(text=f"📁 {display_path}")
             self.scan_btn.configure(state="normal")
             self.scan_duplicates_btn.configure(state="normal")
+            self.extract_entities_btn.configure(state="normal")
             self.status_label.config(text=f"Ready to scan: {Path(directory).name}")
     
     def _select_file(self):
@@ -793,13 +962,14 @@ class ScoutApp:
             self.dir_label.config(text=f"📄 {display_path}")
             self.scan_btn.configure(state="normal")
             self.scan_duplicates_btn.configure(state="disabled")
+            self.extract_entities_btn.configure(state="normal")
             self.status_label.config(text=f"Ready to scan: {Path(file_path).name}")
     
     def _switch_mode(self, mode: str):
-        if self.is_scanning or self.is_scanning_duplicates:
+        if self.is_scanning or self.is_scanning_duplicates or self.is_extracting_entities:
             messagebox.showwarning(
-                "Scan in Progress",
-                "Please wait for the current scan to complete or cancel it before switching modes."
+                "Operation in Progress",
+                "Please wait for the current operation to complete or cancel it before switching modes."
             )
             return
         
@@ -809,10 +979,12 @@ class ScoutApp:
         if mode == "abbreviations":
             self.abbrev_mode_btn.configure(bootstyle="primary")
             self.dedupe_mode_btn.configure(bootstyle="secondary-outline")
+            self.entity_mode_btn.configure(bootstyle="secondary-outline")
             
-            # Show abbreviation controls, hide dedupe controls
+            # Show abbreviation controls, hide others
             self.abbrev_controls.pack(fill='x')
             self.dedupe_controls.pack_forget()
+            self.entity_controls.pack_forget()
             
             # Update UI elements
             self.status_label.config(text="Abbreviation Scanner mode - Select a folder to begin")
@@ -821,32 +993,67 @@ class ScoutApp:
             # Show/hide appropriate sections
             self.results_tree.pack(fill="both", expand=True)
             self.duplicates_tree.pack_forget()
+            self.entities_tree.pack_forget()
             self.stats_label.pack(anchor="w", pady=(0, 10))
             
-        else:  # duplicates mode
+            # Enable scan button for abbreviations
+            if self.selected_directory or self.selected_file:
+                self.scan_btn.configure(state="normal")
+            
+        elif mode == "duplicates":
             self.abbrev_mode_btn.configure(bootstyle="secondary-outline")
             self.dedupe_mode_btn.configure(bootstyle="primary")
+            self.entity_mode_btn.configure(bootstyle="secondary-outline")
             
-            # Show dedupe controls, hide abbreviation controls
+            # Show dedupe controls, hide others
             self.dedupe_controls.pack(fill='x')
             self.abbrev_controls.pack_forget()
+            self.entity_controls.pack_forget()
             
             # Update UI elements
             self.status_label.config(text="File Deduplicator mode - Select a folder to begin")
             self._log("Switched to File Deduplicator mode", "INFO")
             
-            # Show duplicates table instead of abbreviations
+            # Show duplicates table
             self.results_tree.pack_forget()
             self.duplicates_tree.pack(fill="both", expand=True)
+            self.entities_tree.pack_forget()
             self.stats_label.pack(anchor="w", pady=(0, 10))
             
             # Update scan button text based on dry run mode
             self._update_scan_button_text()
+            
+        else:  # entities mode
+            self.abbrev_mode_btn.configure(bootstyle="secondary-outline")
+            self.dedupe_mode_btn.configure(bootstyle="secondary-outline")
+            self.entity_mode_btn.configure(bootstyle="primary")
+            
+            # Show entity controls, hide others
+            self.entity_controls.pack(fill='x')
+            self.abbrev_controls.pack_forget()
+            self.dedupe_controls.pack_forget()
+            
+            # Update UI elements
+            self.status_label.config(text="Entity Extraction mode - Select a folder or file to begin")
+            self._log("Switched to Entity Extraction mode", "INFO")
+            
+            # Show entities table
+            self.results_tree.pack_forget()
+            self.duplicates_tree.pack_forget()
+            self.entities_tree.pack(fill="both", expand=True)
+            self.stats_label.pack(anchor="w", pady=(0, 10))
+            
+            # Enable extract button
+            if self.selected_directory or self.selected_file:
+                self.extract_entities_btn.configure(state="normal")
         
         # Reset selection state
         if self.selected_directory:
             folder_name = Path(self.selected_directory).name
-            self.status_label.config(text=f"Ready to scan: {folder_name}")
+            self.status_label.config(text=f"Ready: {folder_name}")
+        elif self.selected_file:
+            file_name = Path(self.selected_file).name
+            self.status_label.config(text=f"Ready: {file_name}")
     
     def _update_threshold_label(self, *args):
         self.threshold_label.config(text=str(self.threshold_var.get()))
@@ -2545,6 +2752,819 @@ class ScoutApp:
             bootstyle="secondary",
             width=12
         ).pack(side="right")
+    
+    # ========================================
+    # ENTITY EXTRACTION METHODS
+    # ========================================
+    
+    def _update_entity_settings(self):
+        """Update entity extraction settings"""
+        self.use_llm_extraction = self.use_llm_var.get()
+        api_key = self.api_key_var.get().strip()
+        
+        if self.use_llm_extraction and not api_key:
+            messagebox.showwarning(
+                "API Key Required",
+                "Please enter an OpenAI API key to use LLM extraction."
+            )
+            self.use_llm_var.set(False)
+            return
+        
+        self.openai_api_key = api_key if api_key else None
+        self._log(f"Entity extraction settings updated: LLM={'enabled' if self.use_llm_extraction else 'disabled'}", "INFO")
+    
+    def _save_api_key(self):
+        """Save API key to environment variable"""
+        api_key = self.api_key_var.get().strip()
+        if api_key:
+            os.environ['OPENAI_API_KEY'] = api_key
+            self.openai_api_key = api_key
+            messagebox.showinfo("Success", "API key saved for this session.")
+            self._log("OpenAI API key saved", "INFO")
+        else:
+            messagebox.showwarning("No Key", "Please enter an API key first.")
+    
+    def _update_entity_progress(self, message: str, percentage: int):
+        """Simple progress update for entity extraction"""
+        self.root.after(0, lambda: self.progress_bar.configure(value=percentage))
+        self.root.after(0, lambda: self.progress_label.config(text=message))
+    
+    def _start_entity_extraction(self):
+        """Start entity extraction in a background thread"""
+        if not self.selected_directory and not self.selected_file:
+            return
+        
+        if self.is_extracting_entities:
+            messagebox.showwarning("Extraction in Progress", "An entity extraction is already running.")
+            return
+        
+        self._log("="*60, "INFO")
+        self._log("Starting entity extraction", "INFO")
+        
+        if self.selected_file:
+            self._log(f"Target file: {self.selected_file}", "INFO")
+        else:
+            self._log(f"Target directory: {self.selected_directory}", "INFO")
+        
+        mode = "LLM" if self.use_llm_extraction else "Pattern/spaCy"
+        self._log(f"Extraction mode: {mode}", "INFO")
+        
+        # Disable buttons
+        self.extract_entities_btn.configure(state="disabled")
+        self.export_entities_btn.configure(state="disabled")
+        self.clear_entities_btn.configure(state="disabled")
+        
+        # Show cancel button
+        self.cancel_btn_scan.pack(side="left", padx=(10, 0))
+        
+        # Clear previous results
+        for item in self.entities_tree.get_children():
+            self.entities_tree.delete(item)
+        
+        # Start extraction in background
+        thread = threading.Thread(target=self._run_entity_extraction, daemon=True)
+        thread.start()
+    
+    def _run_entity_extraction(self):
+        """Run entity extraction (background thread)"""
+        try:
+            self.is_extracting_entities = True
+            self.cancel_scan = False
+            
+            # Initialize entity extractor
+            self._update_entity_progress("Initializing entity extractor...", 10)
+            from core.entity_extractor import EntityExtractor
+            
+            self.entity_extractor = EntityExtractor(
+                openai_api_key=self.openai_api_key,
+                use_llm=self.use_llm_extraction
+            )
+            
+            # Get files to process
+            if self.selected_file:
+                files = [self.selected_file]
+            else:
+                self._update_entity_progress("Scanning for documents...", 20)
+                files = self.scanner.scan_files(
+                    self.selected_directory,
+                    file_types=["txt", "pdf", "docx", "doc", "md", "rtf", "odt"]
+                )
+            
+            # Store files list for export naming
+            self.entity_source_files = files
+            
+            if not files:
+                self._update_entity_progress("No documents found!", 100)
+                self._log("No documents found to extract entities from", "WARN")
+                return
+            
+            self._log(f"Found {len(files)} document(s) to process", "INFO")
+            
+            # Process each file
+            all_people = []
+            all_orgs = []
+            all_locations = []
+            all_enriched_people = []
+            
+            for idx, file_path in enumerate(files):
+                if self.cancel_scan:
+                    self._log("Entity extraction cancelled by user", "WARN")
+                    self._update_entity_progress("Extraction cancelled", 100)
+                    return
+                
+                progress = 30 + (idx / len(files)) * 60
+                self._update_entity_progress(f"Processing: {Path(file_path).name}", progress)
+                
+                try:
+                    # Parse document
+                    text = self.parser.parse_file(Path(file_path))
+                    if not text or len(text.strip()) < 50:
+                        self._log(f"Skipping {file_path}: insufficient text", "WARN")
+                        continue
+                    
+                    self._log(f"Extracting entities from {Path(file_path).name}...", "INFO")
+                    
+                    # Extract entities
+                    results = self.entity_extractor.extract_entities(
+                        text,
+                        extract_people=self.extract_people_var.get(),
+                        extract_orgs=self.extract_orgs_var.get(),
+                        extract_locations=self.extract_locations_var.get()
+                    )
+                    
+                    # Aggregate results
+                    all_people.extend(results.get('people', []))
+                    all_orgs.extend(results.get('organizations', []))
+                    all_locations.extend(results.get('locations', []))
+                    all_enriched_people.extend(results.get('enriched_people', []))
+                    
+                    self._log(f"Found {len(results.get('enriched_people', []))} people, "
+                             f"{len(results.get('organizations', []))} orgs, "
+                             f"{len(results.get('locations', []))} locations", "INFO")
+                    
+                except Exception as e:
+                    self._log(f"Error processing {file_path}: {e}", "ERROR")
+            
+            # Store results
+            self.entity_results = {
+                'people': all_people,
+                'organizations': all_orgs,
+                'locations': all_locations,
+                'enriched_people': all_enriched_people
+            }
+            
+            # Update UI with results
+            self._update_entity_progress("Updating results...", 95)
+            self.root.after(0, self._display_entity_results)
+            
+            self._update_entity_progress("Extraction complete!", 100)
+            self._log(f"Entity extraction completed successfully", "INFO")
+            self._log(f"Total: {len(all_enriched_people)} people, {len(all_orgs)} orgs, {len(all_locations)} locations", "INFO")
+            
+        except Exception as e:
+            self._log(f"Entity extraction failed: {e}", "ERROR")
+            self._update_entity_progress("Extraction failed!", 100)
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Entity extraction failed:\n{e}"))
+        
+        finally:
+            self.is_extracting_entities = False
+            self.root.after(0, self._entity_extraction_complete)
+    
+    def _display_entity_results(self):
+        """Display entity extraction results in the tree view"""
+        # Clear existing items
+        for item in self.entities_tree.get_children():
+            self.entities_tree.delete(item)
+        
+        if not self.entity_results:
+            return
+        
+        show_low_confidence = self.show_low_confidence_var.get()
+        
+        # Add enriched people (people with roles/orgs/countries)
+        enriched = self.entity_results.get('enriched_people', [])
+        count = 0
+        
+        for person in enriched:
+            # Filter by confidence if needed
+            if not show_low_confidence and person.confidence.value == 'low':
+                continue
+            
+            # Determine tag based on confidence
+            confidence_tag = f"{person.confidence.value}_confidence"
+            
+            # Format completeness
+            completeness = f"{person.completeness_score():.0f}%"
+            
+            # Insert into tree
+            self.entities_tree.insert(
+                '',
+                'end',
+                values=(
+                    person.name,
+                    'Person',
+                    person.role or '-',
+                    person.organization or '-',
+                    person.country or '-',
+                    person.confidence.value.upper(),
+                    completeness
+                ),
+                tags=(confidence_tag,)
+            )
+            count += 1
+        
+        # Add organizations (without duplicates)
+        orgs_seen = set()
+        for org in self.entity_results.get('organizations', []):
+            if not show_low_confidence and org.confidence.value == 'low':
+                continue
+            
+            if org.name.lower() not in orgs_seen:
+                orgs_seen.add(org.name.lower())
+                
+                confidence_tag = f"{org.confidence.value}_confidence"
+                
+                self.entities_tree.insert(
+                    '',
+                    'end',
+                    values=(
+                        org.name,
+                        'Organization',
+                        '-',
+                        '-',
+                        '-',
+                        org.confidence.value.upper(),
+                        'N/A'
+                    ),
+                    tags=(confidence_tag,)
+                )
+                count += 1
+        
+        # Add locations (without duplicates)
+        locs_seen = set()
+        for loc in self.entity_results.get('locations', []):
+            if not show_low_confidence and loc.confidence.value == 'low':
+                continue
+            
+            if loc.name.lower() not in locs_seen:
+                locs_seen.add(loc.name.lower())
+                
+                confidence_tag = f"{loc.confidence.value}_confidence"
+                
+                self.entities_tree.insert(
+                    '',
+                    'end',
+                    values=(
+                        loc.name,
+                        'Location',
+                        '-',
+                        '-',
+                        '-',
+                        loc.confidence.value.upper(),
+                        'N/A'
+                    ),
+                    tags=(confidence_tag,)
+                )
+                count += 1
+        
+        # Update stats
+        people_count = len([p for p in enriched if show_low_confidence or p.confidence.value != 'low'])
+        org_count = len(orgs_seen)
+        loc_count = len(locs_seen)
+        
+        stats_text = f"Found {people_count} people, {org_count} organizations, {loc_count} locations"
+        self.stats_label.config(text=stats_text)
+        
+        # Enable export button
+        if count > 0:
+            self.export_entities_btn.configure(state="normal")
+            self.clear_entities_btn.configure(state="normal")
+    
+    def _entity_extraction_complete(self):
+        """Called when entity extraction completes"""
+        self.extract_entities_btn.configure(state="normal")
+        self.cancel_btn_scan.pack_forget()
+        
+        folder_name = Path(self.selected_directory).name if self.selected_directory else Path(self.selected_file).name
+        self.status_label.config(text=f"Extraction complete: {folder_name}")
+    
+    def _export_entities(self):
+        """Show entity export dialog with options"""
+        if not self.entity_results:
+            messagebox.showwarning("No Results", "No entity extraction results to export.")
+            return
+        
+        export_window = tk.Toplevel(self.root)
+        export_window.title("Export Entities")
+        export_window.geometry("520x750")
+        export_window.transient(self.root)
+        export_window.grab_set()
+        
+        # Center dialog
+        export_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (export_window.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (export_window.winfo_height() // 2)
+        export_window.geometry(f"+{x}+{y}")
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(export_window, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(export_window, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        container = ttk.Frame(scrollable_frame, padding=(20, 20, 20, 20))
+        container.pack(fill="both", expand=True)
+        
+        ttk.Label(
+            container,
+            text="Export Entities",
+            font=("Helvetica", 14, "bold")
+        ).pack(pady=(0, 10))
+        
+        # Export options frame
+        options_frame = ttk.LabelFrame(container, text="Export Settings")
+        options_frame.pack(fill="x", pady=(0, 20), padx=15, ipady=15, ipadx=15)
+        
+        # Entity counts
+        total_people = len(self.entity_results.get('enriched_people', []))
+        total_orgs = len(self.entity_results.get('organizations', []))
+        total_locations = len(self.entity_results.get('locations', []))
+        total_entities = total_people + total_orgs + total_locations
+        
+        info_text = f"Total entities: {total_entities}\n"
+        info_text += f"  • People: {total_people}\n"
+        info_text += f"  • Organizations: {total_orgs}\n"
+        info_text += f"  • Locations: {total_locations}"
+        
+        ttk.Label(
+            options_frame,
+            text=info_text,
+            font=("Helvetica", 10, "bold"),
+            bootstyle="info",
+            justify="left"
+        ).pack(pady=(0, 15), anchor="w")
+        
+        # Include options
+        include_frame = ttk.LabelFrame(options_frame, text="Include in Export")
+        include_frame.pack(fill="x", pady=(0, 15))
+        
+        include_people_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            include_frame,
+            text=f"People ({total_people})",
+            variable=include_people_var,
+            bootstyle="primary-round-toggle"
+        ).pack(anchor="w", padx=10, pady=3)
+        
+        include_orgs_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            include_frame,
+            text=f"Organizations ({total_orgs})",
+            variable=include_orgs_var,
+            bootstyle="primary-round-toggle"
+        ).pack(anchor="w", padx=10, pady=3)
+        
+        include_locations_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            include_frame,
+            text=f"Locations ({total_locations})",
+            variable=include_locations_var,
+            bootstyle="primary-round-toggle"
+        ).pack(anchor="w", padx=10, pady=3)
+        
+        # Confidence filter
+        confidence_frame = ttk.LabelFrame(options_frame, text="Confidence Filter")
+        confidence_frame.pack(fill="x", pady=(0, 15))
+        
+        include_high_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            confidence_frame,
+            text="High confidence",
+            variable=include_high_var,
+            bootstyle="success-round-toggle"
+        ).pack(anchor="w", padx=10, pady=3)
+        
+        include_medium_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            confidence_frame,
+            text="Medium confidence",
+            variable=include_medium_var,
+            bootstyle="warning-round-toggle"
+        ).pack(anchor="w", padx=10, pady=3)
+        
+        include_low_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            confidence_frame,
+            text="Low confidence",
+            variable=include_low_var,
+            bootstyle="danger-round-toggle"
+        ).pack(anchor="w", padx=10, pady=3)
+        
+        # Store variables for export function access
+        export_window.include_people_var = include_people_var
+        export_window.include_orgs_var = include_orgs_var
+        export_window.include_locations_var = include_locations_var
+        export_window.include_high_var = include_high_var
+        export_window.include_medium_var = include_medium_var
+        export_window.include_low_var = include_low_var
+        
+        # Format selection
+        ttk.Label(
+            container,
+            text="Select Export Format",
+            font=("Helvetica", 12, "bold")
+        ).pack(pady=(10, 10))
+        
+        # Export format buttons
+        ttk.Button(
+            container,
+            text="📄 Export as Text (.txt)",
+            command=lambda: self._export_entities_with_options('txt', export_window),
+            bootstyle="success",
+            width=30
+        ).pack(pady=5)
+        
+        ttk.Button(
+            container,
+            text="📊 Export as CSV (.csv)",
+            command=lambda: self._export_entities_with_options('csv', export_window),
+            bootstyle="info",
+            width=30
+        ).pack(pady=5)
+        
+        ttk.Button(
+            container,
+            text="📋 Export as JSON (.json)",
+            command=lambda: self._export_entities_with_options('json', export_window),
+            bootstyle="primary",
+            width=30
+        ).pack(pady=5)
+        
+        ttk.Button(
+            container,
+            text="📗 Export as Excel (.xlsx)",
+            command=lambda: self._export_entities_with_options('xlsx', export_window),
+            bootstyle="success-outline",
+            width=30
+        ).pack(pady=5)
+        
+        # Cleanup function
+        def on_close():
+            canvas.unbind_all("<MouseWheel>")
+            export_window.destroy()
+        
+        ttk.Button(
+            container,
+            text="Cancel",
+            command=on_close,
+            bootstyle="secondary",
+            width=30
+        ).pack(pady=(20, 0))
+        
+        export_window.protocol("WM_DELETE_WINDOW", on_close)
+    
+    def _export_entities_with_options(self, format: str, dialog):
+        """Export entities with selected options and smart file naming"""
+        if not self.entity_results:
+            messagebox.showwarning("No Results", "No results to export!")
+            return
+        
+        # Filter results based on options
+        filtered_results = self._filter_entity_results(
+            self.entity_results,
+            dialog.include_people_var.get(),
+            dialog.include_orgs_var.get(),
+            dialog.include_locations_var.get(),
+            dialog.include_high_var.get(),
+            dialog.include_medium_var.get(),
+            dialog.include_low_var.get()
+        )
+        
+        if not any(filtered_results.values()):
+            messagebox.showwarning("No Data", "No entities match the selected filters!")
+            return
+        
+        # Determine default filename
+        if hasattr(self, 'entity_source_files') and len(self.entity_source_files) == 1:
+            # Single file: use document title
+            source_file = Path(self.entity_source_files[0])
+            doc_title = self.parser.extract_title(source_file)
+            default_filename = f"{doc_title}_entities.{format}"
+        else:
+            # Multiple files: ask user for name
+            default_filename = None
+        
+        # If multiple files, show input dialog for export name
+        if not default_filename:
+            name_dialog = tk.Toplevel(dialog)
+            name_dialog.title("Export Name")
+            name_dialog.geometry("400x150")
+            name_dialog.transient(dialog)
+            name_dialog.grab_set()
+            
+            # Center dialog
+            name_dialog.update_idletasks()
+            x = dialog.winfo_x() + (dialog.winfo_width() // 2) - (name_dialog.winfo_width() // 2)
+            y = dialog.winfo_y() + (dialog.winfo_height() // 2) - (name_dialog.winfo_height() // 2)
+            name_dialog.geometry(f"+{x}+{y}")
+            
+            ttk.Label(
+                name_dialog,
+                text="Enter a name for the export file:",
+                font=("Helvetica", 10)
+            ).pack(pady=(20, 10))
+            
+            name_entry = ttk.Entry(name_dialog, width=40)
+            name_entry.insert(0, f"entity_export_{len(self.entity_source_files)}_documents")
+            name_entry.pack(pady=10, padx=20)
+            name_entry.focus()
+            
+            result_name = [None]
+            
+            def confirm_name():
+                name = name_entry.get().strip()
+                if name:
+                    result_name[0] = f"{name}.{format}"
+                    name_dialog.destroy()
+                else:
+                    messagebox.showwarning("Invalid Name", "Please enter a valid file name")
+            
+            def cancel_name():
+                name_dialog.destroy()
+            
+            ttk.Button(
+                name_dialog,
+                text="OK",
+                command=confirm_name,
+                bootstyle="success"
+            ).pack(side="left", padx=(80, 10), pady=10)
+            
+            ttk.Button(
+                name_dialog,
+                text="Cancel",
+                command=cancel_name,
+                bootstyle="secondary"
+            ).pack(side="left", pady=10)
+            
+            name_entry.bind('<Return>', lambda e: confirm_name())
+            name_entry.bind('<Escape>', lambda e: cancel_name())
+            
+            # Wait for dialog to close
+            name_dialog.wait_window()
+            
+            if not result_name[0]:
+                return  # User cancelled
+            
+            default_filename = result_name[0]
+        
+        # Get save location
+        filetypes = {
+            'txt': [("Text files", "*.txt"), ("All files", "*.*")],
+            'csv': [("CSV files", "*.csv"), ("All files", "*.*")],
+            'json': [("JSON files", "*.json"), ("All files", "*.*")],
+            'xlsx': [("Excel files", "*.xlsx"), ("All files", "*.*")]
+        }
+        
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=f".{format}",
+            filetypes=filetypes.get(format, [("All files", "*.*")]),
+            initialfile=default_filename,
+            title=f"Save {format.upper()} Export"
+        )
+        
+        if not filepath:
+            return
+        
+        try:
+            # Export based on format
+            if format == 'json':
+                self._export_entities_json(filepath, filtered_results)
+            elif format == 'csv':
+                self._export_entities_csv(filepath, filtered_results)
+            elif format == 'xlsx':
+                self._export_entities_xlsx(filepath, filtered_results)
+            elif format == 'txt':
+                self._export_entities_txt(filepath, filtered_results)
+            
+            dialog.destroy()
+            messagebox.showinfo("Success", f"Entities exported to:\n{Path(filepath).name}")
+            self._log(f"Entities exported to {filepath}", "INFO")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export entities:\n{e}")
+            self._log(f"Entity export failed: {e}", "ERROR")
+    
+    def _filter_entity_results(self, results, include_people, include_orgs, include_locations,
+                                include_high, include_medium, include_low):
+        """Filter entity results based on selected options"""
+        from core.entity_extractor import ConfidenceLevel
+        
+        confidence_levels = []
+        if include_high:
+            confidence_levels.append(ConfidenceLevel.HIGH)
+        if include_medium:
+            confidence_levels.append(ConfidenceLevel.MEDIUM)
+        if include_low:
+            confidence_levels.append(ConfidenceLevel.LOW)
+        
+        filtered = {
+            'people': [],
+            'organizations': [],
+            'locations': [],
+            'enriched_people': []
+        }
+        
+        if include_people:
+            filtered['people'] = [e for e in results.get('people', []) if e.confidence in confidence_levels]
+            filtered['enriched_people'] = [e for e in results.get('enriched_people', []) if e.confidence in confidence_levels]
+        
+        if include_orgs:
+            filtered['organizations'] = [e for e in results.get('organizations', []) if e.confidence in confidence_levels]
+        
+        if include_locations:
+            filtered['locations'] = [e for e in results.get('locations', []) if e.confidence in confidence_levels]
+        
+        return filtered
+    
+    def _export_entities_json(self, filepath, results):
+        """Export entities to JSON format"""
+        import json
+        export_data = self.entity_extractor.export_to_dict(results)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+    
+    def _export_entities_csv(self, filepath, results):
+        """Export entities to CSV format"""
+        import csv
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Name', 'Type', 'Role', 'Organization', 'Country', 'Confidence', 'Completeness', 'Context'])
+            
+            # Export enriched people
+            for person in results.get('enriched_people', []):
+                writer.writerow([
+                    person.name,
+                    'Person',
+                    person.role or '',
+                    person.organization or '',
+                    person.country or '',
+                    person.confidence.value,
+                    f"{person.completeness_score():.0f}%",
+                    (person.context or '')[:100]  # Truncate context
+                ])
+            
+            # Export basic people (if not already in enriched)
+            for person in results.get('people', []):
+                writer.writerow([
+                    person.name,
+                    'Person',
+                    '',
+                    '',
+                    '',
+                    person.confidence.value,
+                    '',
+                    (person.context or '')[:100]
+                ])
+            
+            # Export organizations
+            for org in results.get('organizations', []):
+                writer.writerow([
+                    org.name,
+                    'Organization',
+                    '',
+                    '',
+                    '',
+                    org.confidence.value,
+                    '',
+                    (org.context or '')[:100]
+                ])
+            
+            # Export locations
+            for loc in results.get('locations', []):
+                writer.writerow([
+                    loc.name,
+                    'Location',
+                    '',
+                    '',
+                    '',
+                    loc.confidence.value,
+                    '',
+                    (loc.context or '')[:100]
+                ])
+    
+    def _export_entities_xlsx(self, filepath, results):
+        """Export entities to Excel format"""
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Entities"
+        
+        # Headers
+        headers = ['Name', 'Type', 'Role', 'Organization', 'Country', 'Confidence', 'Completeness', 'Context']
+        ws.append(headers)
+        
+        # Style headers
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Add data
+        for person in results.get('enriched_people', []):
+            ws.append([
+                person.name,
+                'Person',
+                person.role or '',
+                person.organization or '',
+                person.country or '',
+                person.confidence.value,
+                f"{person.completeness_score():.0f}%",
+                (person.context or '')[:200]
+            ])
+        
+        for person in results.get('people', []):
+            ws.append([
+                person.name,
+                'Person',
+                '',
+                '',
+                '',
+                person.confidence.value,
+                '',
+                (person.context or '')[:200]
+            ])
+        
+        for org in results.get('organizations', []):
+            ws.append([
+                org.name,
+                'Organization',
+                '',
+                '',
+                '',
+                org.confidence.value,
+                '',
+                (org.context or '')[:200]
+            ])
+        
+        for loc in results.get('locations', []):
+            ws.append([
+                loc.name,
+                'Location',
+                '',
+                '',
+                '',
+                loc.confidence.value,
+                '',
+                (loc.context or '')[:200]
+            ])
+        
+        # Adjust column widths
+        ws.column_dimensions['A'].width = 25
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 20
+        ws.column_dimensions['D'].width = 25
+        ws.column_dimensions['E'].width = 15
+        ws.column_dimensions['F'].width = 12
+        ws.column_dimensions['G'].width = 12
+        ws.column_dimensions['H'].width = 40
+        
+        wb.save(filepath)
+    
+    def _export_entities_txt(self, filepath, results):
+        """Export entities to text format"""
+        formatted = self.entity_extractor.format_results(results, include_low_confidence=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(formatted)
+    
+    def _clear_entity_results(self):
+        """Clear entity extraction results"""
+        for item in self.entities_tree.get_children():
+            self.entities_tree.delete(item)
+        
+        self.entity_results = {}
+        self.stats_label.config(text="No results yet")
+        self.export_entities_btn.configure(state="disabled")
+        self.clear_entities_btn.configure(state="disabled")
+        self._log("Entity results cleared", "INFO")
     
     def run(self):
         
