@@ -2845,10 +2845,7 @@ class ScoutApp:
                 files = [self.selected_file]
             else:
                 self._update_entity_progress("Scanning for documents...", 20)
-                files = self.scanner.scan_files(
-                    self.selected_directory,
-                    file_types=["txt", "pdf", "docx", "doc", "md", "rtf", "odt"]
-                )
+                files = self.scanner.scan_directory(self.selected_directory)
             
             # Store files list for export naming
             self.entity_source_files = files
@@ -2922,9 +2919,10 @@ class ScoutApp:
             self._log(f"Total: {len(all_enriched_people)} people, {len(all_orgs)} orgs, {len(all_locations)} locations", "INFO")
             
         except Exception as e:
-            self._log(f"Entity extraction failed: {e}", "ERROR")
+            error_msg = str(e)
+            self._log(f"Entity extraction failed: {error_msg}", "ERROR")
             self._update_entity_progress("Extraction failed!", 100)
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Entity extraction failed:\n{e}"))
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Entity extraction failed:\n{error_msg}"))
         
         finally:
             self.is_extracting_entities = False

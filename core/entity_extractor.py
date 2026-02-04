@@ -106,8 +106,27 @@ class EntityExtractor:
         'from', 'by', 'about', 'as', 'into', 'through', 'during', 'before', 'after',
         'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once',
         'advocacy', 'education', 'capacity', 'coordination', 'equity', 'governance',
-        'integration', 'collaboration', 'sustainability', 'building', 'strengthening'
+        'integration', 'collaboration', 'sustainability', 'building', 'strengthening',
+        # Technical/command terms
+        'quick', 'start', 'guide', 'install', 'run', 'document', 'format', 'computing',
+        'protocols', 'machine', 'learning', 'complex', 'cases', 'getting', 'help',
+        'entity', 'recognition', 'select', 'folder', 'save', 'key', 'types', 'data',
+        'model', 'icon', 'python', 'scout', 'pyinstaller', 'advanced', 'features',
+        'platform', 'specific', 'notes', 'optional', 'system', 'preferences',
+        # Street address terms
+        'street', 'drive', 'road', 'avenue', 'lane', 'boulevard', 'court', 'place',
+        'way', 'circle', 'terrace'
     }
+    
+    # Patterns that indicate this is NOT a person name
+    NON_PERSON_PATTERNS = [
+        r'^(Quick|Getting|Install|Run|Document|Entity|Select|Save|Data|Advanced)\s',  # Commands/headers
+        r'\s(Guide|Start|Help|Format|Types|Model|Icon|Features|Notes|Drive|Street|Road|Avenue|Lane|Boulevard)$',  # End with non-name words
+        r'^[A-Z]{2,}$',  # All caps (likely acronym)
+        r'\.(py|md|txt|pdf|exe|sh|bat)$',  # File extensions
+        r'[_\-/\\]',  # Contains file path chars
+        r'\n',  # Contains newline (malformed extraction)
+    ]
     
     # Words that are definitely not organization names
     NON_ORG_WORDS = {
@@ -117,6 +136,32 @@ class EntityExtractor:
         'expand', 'secure', 'provide', 'support', 'develop', 'implement', 'key',
         'national', 'regional', 'local', 'main', 'primary', 'secondary',
         'equityvision', 'kes'  # Common false positives
+    }
+    
+    # Specific terms that are NOT organizations (blacklist)
+    ORG_BLACKLIST = {
+        # File formats and tech terms
+        'markdown', 'pattern', 'opendocument', 'entitytype',
+        # OS and platforms
+        'windows', 'linux', 'macos', 'ubuntu', 'debian', 'android', 'ios',
+        'ubuntu/debian',
+        # Headers and generic terms
+        'people', 'organizations', 'locations', 'actions', 'features', 'notes',
+        'optional', 'organization:', 'advanced features', 'platform-specific notes',
+        'system preferences', 'github actions', 'quick start', 'run scout',
+        'people, organizations, locations',
+        # Technical components
+        'central processing unit', 'random access memory', 'cpu', 'ram', 'gpu',
+        # Version numbers
+        'v1', 'v2', 'version',
+        # Generic descriptors
+        'ai-powered extraction', 'extraction',
+        # Incomplete/Generic terms
+        'incorporated', 'department', 'managing integrated', 'education and/or social service',
+        # Generic government/legal terms
+        'supreme courts', 'judicial branch', 'special counsel', 'congress',
+        # Roles/titles (not organizations)
+        'chairman', 'president', 'director', 'manager', 'superintendent', 'chairs'
     }
     
     # Acronyms that look like orgs but aren't
@@ -138,6 +183,15 @@ class EntityExtractor:
         r'CEO|CFO|CTO|Chairman|Vice President|Secretary|Minister|Commissioner|'
         r'Executive|Officer|Coordinator|Head|Lead|Senior|Principal)\b',
     ]
+    
+    # Blacklist for locations (things that look like places but aren't)
+    LOCATION_BLACKLIST = {
+        'windows', 'linux', 'macos', 'ubuntu', 'debian', 'android', 'ios',
+        'mac', 'pc', 'unix',
+        # Roles that might be capitalized
+        'superintendent', 'director', 'manager', 'chairman', 'president',
+        'chairs', 'chair', 'secretary', 'treasurer'
+    }
     
     # Country list (top 50 most common)
     COUNTRIES = {
@@ -171,6 +225,10 @@ class EntityExtractor:
             r'\b(' + '|'.join(self.ORG_SUFFIXES) + r')\b',
             re.IGNORECASE
         )
+        # Compile non-person patterns
+        self.non_person_patterns_compiled = [
+            re.compile(pattern, re.IGNORECASE) for pattern in self.NON_PERSON_PATTERNS
+        ]
     
     def _is_valid_person_name(self, name: str) -> bool:
         """Validate if a string is likely a person name"""
@@ -181,6 +239,11 @@ class EntityExtractor:
         words = name.split()
         if len(words) < 2:
             return False
+        
+        # Check against non-person patterns
+        for pattern in self.non_person_patterns_compiled:
+            if pattern.search(name):
+                return False
         
         # Check if any word is in non-person list
         if any(word.lower() in self.NON_PERSON_WORDS for word in words):
@@ -194,6 +257,14 @@ class EntityExtractor:
         if re.search(r'[•\d@#$%^&*()\[\]{}]', name):
             return False
         
+        # Reject if all words are in title case and > 3 words (likely a header)
+        if len(words) > 3 and all(w[0].isupper() for w in words if w):
+            return False
+        
+        # Must have typical name pattern (at least one word 2+ chars)
+        if not any(len(w) >= 2 and w[0].isupper() and w[1:].islower() for w in words):
+            return False
+        
         return True
     
     def _is_valid_organization(self, name: str) -> bool:
@@ -204,8 +275,65 @@ class EntityExtractor:
         # Remove leading/trailing whitespace and bullet points
         name = name.strip(' •\t\n')
         
+        # Check against organization blacklist
+        if name.lower() in self.ORG_BLACKLIST:
+            return False
+        
+        # Reject if contains newlines (malformed extraction)
+        if '\n' in name:
+            return False
+        
+        # Reject if starts with lowercase preposition (partial extraction like "of Health at the Ministry")
+        if name and name.split()[0].lower() in ['of', 'at', 'in', 'on', 'for', 'with', 'by', 'and']:
+            return False
+        
+        # Reject trailing punctuation/incomplete phrases ("United Nations Educational,")
+        if name and name[-1] in [',', ';', ':']:
+            return False
+        
+        # Reject all-caps phrases that are likely headers (2-3 words, all caps)
+        words = name.split()
+        if 2 <= len(words) <= 3 and all(w.isupper() for w in words if len(w) > 2):
+            # Allow well-known acronyms
+            if name.upper() not in ['WHO', 'CDC', 'FDA', 'NIH', 'NASA', 'UNESCO', 'MTRH', 'NCCEAP']:
+                return False
+        
+        # Reject if it's a book/document title pattern (contains apostrophe + "s" and multiple caps words)
+        if "'" in name and len(name.split()) > 4:
+            return False
+        
+        # Reject if starts with lowercase word directly attached to uppercase (like "theU.S.")
+        if re.match(r'^[a-z]+[A-Z]', name):
+            return False
+        
+        # Reject concatenated words in middle of org name (like "CriminalJustice")
+        # Check for pattern: lowercase followed by uppercase in middle of a word
+        if re.search(r'\b\w*[a-z][A-Z]\w*\b', name):
+            return False
+        
+        # Reject concatenated words with no spaces (like "IJISproject")
+        # Detect: CAPS then lowercase word without space between
+        if re.search(r'[A-Z]{2,}[a-z]', name) and ' ' not in name:
+            return False
+        
+        # Reject version numbers (v1.0.0, version 2.0, etc.)
+        if re.search(r'^v\d+\.\d+|^version\s+\d+', name, re.IGNORECASE):
+            return False
+        
         # Reject if starts with bullet or special chars
-        if name and name[0] in '•●◦▪▫-–—':
+        if name and name[0] in '•●◦▪▫-–—│├└':
+            return False
+        
+        # Reject if contains file path or tree characters
+        if any(char in name for char in ['│', '├', '└', '──', '//', '**']):
+            return False
+        
+        # Reject if looks like a file path or markdown formatting
+        if re.search(r'\.(py|md|txt|pdf|sh|bat|exe|js|ts|html|css)\b', name, re.IGNORECASE):
+            return False
+        
+        # Reject if contains markdown/code formatting
+        if re.search(r'[`#\[\](){}]|\*\*|\|\|', name):
             return False
         
         # Reject technical acronyms with slashes (e.g., PET/SPECT, MRI/CT)
@@ -216,6 +344,28 @@ class EntityExtractor:
         
         # Reject single common words
         words = name.split()
+        
+        # Single word organizations must either:
+        # 1. Be all caps (acronym) and in known list, OR
+        # 2. Have an org suffix, OR  
+        # 3. Be >= 8 characters (likely a real org name)
+        if len(words) == 1:
+            word = words[0]
+            
+            # Check acronym blacklist
+            if word.lower() in self.ACRONYM_BLACKLIST:
+                return False
+            
+            # Check non-org words
+            if word.lower() in self.NON_ORG_WORDS:
+                return False
+            
+            # If it's short and doesn't have an org suffix, reject
+            if len(word) < 8 and not any(suffix.lower() in word.lower() for suffix in self.ORG_SUFFIXES):
+                # Allow known org acronyms
+                known_org_acronyms = {'mtrh', 'ncceap', 'who', 'cdc', 'fda', 'nih', 'un', 'eu', 'unesco', 'nasa'}
+                if word.lower() not in known_org_acronyms:
+                    return False
         
         # Check for acronyms in blacklist
         if len(words) == 1 and words[0].lower() in self.ACRONYM_BLACKLIST:
@@ -248,6 +398,18 @@ class EntityExtractor:
         if not name or len(name) < 2:
             return False
         
+        # Check against location blacklist
+        if name.lower() in self.LOCATION_BLACKLIST:
+            return False
+        
+        # Reject common file extensions and technical acronyms
+        file_extensions = {'ai', 'md', 'txt', 'pdf', 'doc', 'xlsx', 'xls', 'csv', 'xml', 
+                          'json', 'html', 'css', 'js', 'py', 'sh', 'bat', 'exe', 'icns'}
+        tech_acronyms = {'ui', 'api', 'cli', 'gui', 'sdk', 'ide', 'os', 'cpu', 'gpu'}
+        
+        if name.lower() in file_extensions or name.lower() in tech_acronyms:
+            return False
+        
         # Must be in our countries list or be a known location
         if name not in self.COUNTRIES:
             # For non-country locations, should be 1-3 words
@@ -257,6 +419,10 @@ class EntityExtractor:
             
             # Should not contain generic words
             if any(word.lower() in ['result', 'key', 'main', 'primary'] for word in words):
+                return False
+            
+            # For 2-letter codes, only accept if it's a known country code
+            if len(name) == 2 and name.upper() not in ['US', 'UK']:
                 return False
         
         return True
@@ -602,8 +768,11 @@ Text:
                     org_candidate = context[start:ent.end()].strip()
                     words = org_candidate.split()
                     if words:
-                        org = ' '.join(words[-5:])  # Last 5 words including suffix
-                        break
+                        org_name = ' '.join(words[-5:])  # Last 5 words including suffix
+                        # Validate the organization name before accepting it
+                        if self._is_valid_organization(org_name):
+                            org = org_name
+                            break
                 
                 # Look for country
                 country = None

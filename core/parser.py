@@ -116,6 +116,15 @@ class Parser:
         try:
             from PyPDF2 import PdfReader
             
+            # Validate file exists and is not empty
+            if not file_path.exists():
+                print(f"PDF file does not exist: {file_path}")
+                return ""
+            
+            if file_path.stat().st_size == 0:
+                print(f"PDF file is empty: {file_path}")
+                return ""
+            
             reader = PdfReader(str(file_path))
             full_text = []
             
@@ -362,6 +371,15 @@ class Parser:
         try:
             from PyPDF2 import PdfReader
             
+            # Validate file exists and is not empty
+            if not file_path.exists():
+                print(f"PDF file does not exist: {file_path}")
+                return file_path.stem
+            
+            if file_path.stat().st_size == 0:
+                print(f"PDF file is empty: {file_path}")
+                return file_path.stem
+            
             reader = PdfReader(str(file_path))
             
             # Try to get title from metadata first
@@ -382,7 +400,7 @@ class Parser:
         except ImportError:
             return file_path.stem
         except Exception as e:
-            print(f"Error extracting PDF title: {e}")
+            print(f"Error extracting PDF title from {file_path.name}: {e}")
             return file_path.stem
     
     def _extract_title_html(self, file_path: Path) -> str:
