@@ -3394,7 +3394,13 @@ class ScoutApp:
         import csv
         with open(filepath, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['Name', 'Type', 'Role', 'Organization', 'Country', 'Confidence', 'Completeness', 'Context'])
+            writer.writerow(['Name', 'Type', 'Role', 'Organization', 'Country', 'Confidence', 'Completeness', 'Document Title', 'Context'])
+            
+            # Get document title from first source file
+            doc_title = ''
+            if self.entity_source_files:
+                first_file = str(self.entity_source_files[0])
+                doc_title = self.file_titles.get(first_file, Path(first_file).stem)
             
             # Export enriched people
             for person in results.get('enriched_people', []):
@@ -3406,6 +3412,7 @@ class ScoutApp:
                     person.country or '',
                     person.confidence.value,
                     f"{person.completeness_score():.0f}%",
+                    doc_title,
                     (person.context or '')[:100]  # Truncate context
                 ])
             
@@ -3419,6 +3426,7 @@ class ScoutApp:
                     '',
                     person.confidence.value,
                     '',
+                    doc_title,
                     (person.context or '')[:100]
                 ])
             
@@ -3432,6 +3440,7 @@ class ScoutApp:
                     '',
                     org.confidence.value,
                     '',
+                    doc_title,
                     (org.context or '')[:100]
                 ])
             
@@ -3445,6 +3454,7 @@ class ScoutApp:
                     '',
                     loc.confidence.value,
                     '',
+                    doc_title,
                     (loc.context or '')[:100]
                 ])
     
@@ -3458,7 +3468,7 @@ class ScoutApp:
         ws.title = "Entities"
         
         # Headers
-        headers = ['Name', 'Type', 'Role', 'Organization', 'Country', 'Confidence', 'Completeness', 'Context']
+        headers = ['Name', 'Type', 'Role', 'Organization', 'Country', 'Confidence', 'Completeness', 'Document Title', 'Context']
         ws.append(headers)
         
         # Style headers
@@ -3468,6 +3478,12 @@ class ScoutApp:
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
+        
+        # Get document title from first source file
+        doc_title = ''
+        if self.entity_source_files:
+            first_file = str(self.entity_source_files[0])
+            doc_title = self.file_titles.get(first_file, Path(first_file).stem)
         
         # Add data
         for person in results.get('enriched_people', []):
@@ -3479,6 +3495,7 @@ class ScoutApp:
                 person.country or '',
                 person.confidence.value,
                 f"{person.completeness_score():.0f}%",
+                doc_title,
                 (person.context or '')[:200]
             ])
         
@@ -3491,6 +3508,7 @@ class ScoutApp:
                 '',
                 person.confidence.value,
                 '',
+                doc_title,
                 (person.context or '')[:200]
             ])
         
@@ -3503,6 +3521,7 @@ class ScoutApp:
                 '',
                 org.confidence.value,
                 '',
+                doc_title,
                 (org.context or '')[:200]
             ])
         
@@ -3515,25 +3534,42 @@ class ScoutApp:
                 '',
                 loc.confidence.value,
                 '',
+                doc_title,
                 (loc.context or '')[:200]
             ])
         
         # Adjust column widths
-        ws.column_dimensions['A'].width = 25
-        ws.column_dimensions['B'].width = 15
-        ws.column_dimensions['C'].width = 20
-        ws.column_dimensions['D'].width = 25
-        ws.column_dimensions['E'].width = 15
-        ws.column_dimensions['F'].width = 12
-        ws.column_dimensions['G'].width = 12
-        ws.column_dimensions['H'].width = 40
+        ws.column_dimensions['A'].width = 25  # Name
+        ws.column_dimensions['B'].width = 15  # Type
+        ws.column_dimensions['C'].width = 20  # Role
+        ws.column_dimensions['D'].width = 25  # Organization
+        ws.column_dimensions['E'].width = 15  # Country
+        ws.column_dimensions['F'].width = 12  # Confidence
+        ws.column_dimensions['G'].width = 12  # Completeness
+        ws.column_dimensions['H'].width = 30  # Document Title
+        ws.column_dimensions['I'].width = 40  # Context
         
         wb.save(filepath)
     
     def _export_entities_txt(self, filepath, results):
         """Export entities to text format"""
-        formatted = self.entity_extractor.format_results(results, include_low_confidence=True)
+        # Get document title from first source file
+        doc_title = ''
+        if self.entity_source_files:
+            first_file = str(self.entity_source_files[0])
+            doc_title = self.file_titles.get(first_file, Path(first_file).stem)
+        
+        # Add header with document title
         with open(filepath, 'w', encoding='utf-8') as f:
+            f.write("=" * 60 + "\n")
+            f.write("SCOUT ENTITY EXTRACTION REPORT\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            if doc_title:
+                f.write(f"Document: {doc_title}\n")
+            f.write("=" * 60 + "\n\n")
+            
+            # Write formatted results
+            formatted = self.entity_extractor.format_results(results, include_low_confidence=True)
             f.write(formatted)
     
     def _clear_entity_results(self):
