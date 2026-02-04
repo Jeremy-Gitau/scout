@@ -134,7 +134,7 @@ class Exporter:
             print(f"Error exporting to JSON: {e}")
             return False
     
-    def export_to_excel(self, abbreviations: Dict[str, dict], output_path: str) -> bool:
+    def export_to_excel(self, abbreviations: Dict[str, dict], output_path: str, file_titles: Dict[str, str] = None) -> bool:
         
         try:
             from openpyxl import Workbook
@@ -143,12 +143,14 @@ class Exporter:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
             
+            file_titles = file_titles or {}  # Default to empty dict if not provided
+            
             wb = Workbook()
             ws = wb.active
             ws.title = "Abbreviations"
             
             # Header row with styling
-            headers = ['Abbreviation', 'Definition', 'Occurrences', 'File Count', 'Files']
+            headers = ['Abbreviation', 'Definition', 'Occurrences', 'File Count', 'Files', 'Document Title']
             for col, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col, value=header)
                 cell.font = Font(bold=True, size=12)
@@ -162,11 +164,16 @@ class Exporter:
                 file_count = len(info['files'])
                 files = ', '.join(Path(f).name for f in info['files'])
                 
+                # Get title from first file
+                first_file = info['files'][0] if info['files'] else ""
+                title = file_titles.get(first_file, "")
+                
                 ws.cell(row=row, column=1, value=abbrev)
                 ws.cell(row=row, column=2, value=definition)
                 ws.cell(row=row, column=3, value=count)
                 ws.cell(row=row, column=4, value=file_count)
                 ws.cell(row=row, column=5, value=files)
+                ws.cell(row=row, column=6, value=title)
             
             # Adjust column widths
             ws.column_dimensions['A'].width = 20
@@ -174,6 +181,7 @@ class Exporter:
             ws.column_dimensions['C'].width = 15
             ws.column_dimensions['D'].width = 15
             ws.column_dimensions['E'].width = 40
+            ws.column_dimensions['F'].width = 30
             
             wb.save(output_file)
             self.last_export_path = output_file
@@ -380,7 +388,7 @@ class Exporter:
         elif format == 'json':
             return self.export_to_json(abbreviations, output_path)
         elif format in ['xlsx', 'excel']:
-            return self.export_to_excel(abbreviations, output_path)
+            return self.export_to_excel(abbreviations, output_path, file_titles)
         elif format == 'pdf':
             return self.export_to_pdf(abbreviations, output_path)
         else:
