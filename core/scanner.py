@@ -13,7 +13,8 @@ class Scanner:
         '.md', '.markdown',  # Markdown
         '.html', '.htm',  # HTML
         '.xml',  # XML
-        '.json'  # JSON (for structured data)
+        '.json',  # JSON (for structured data)
+        '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif'  # Images (for OCR)
     }
     
     def __init__(self):

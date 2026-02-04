@@ -4,6 +4,21 @@ import re
 import csv
 import json
 
+# Check for OCR support
+try:
+    import pytesseract
+    from PIL import Image
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
+
+# Check for PDF to image conversion
+try:
+    from pdf2image import convert_from_path
+    HAS_PDF2IMAGE = True
+except ImportError:
+    HAS_PDF2IMAGE = False
+
 class Parser:
     def __init__(self):
         self.current_file: Optional[Path] = None
@@ -26,6 +41,8 @@ class Parser:
                 return self._extract_title_markdown(file_path)
             elif extension in ['.html', '.htm']:
                 return self._extract_title_html(file_path)
+            elif extension in ['.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif']:
+                return self._extract_title_image(file_path)
             else:
                 # For unsupported formats, return filename
                 return file_path.stem
@@ -61,6 +78,8 @@ class Parser:
                 return self._parse_xml(file_path)
             elif extension == '.json':
                 return self._parse_json(file_path)
+            elif extension in ['.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif']:
+                return self._parse_image(file_path)
             else:
                 return ""
         except Exception as e:
@@ -133,7 +152,16 @@ class Parser:
                 if text:
                     full_text.append(text)
             
-            return '\n'.join(full_text)
+            extracted_text = '\n'.join(full_text)
+            
+            # If text extraction yielded little/no text, try OCR
+            if len(extracted_text.strip()) < 100 and HAS_OCR and HAS_PDF2IMAGE:
+                print(f"PDF appears to be scanned, attempting OCR: {file_path.name}")
+                ocr_text = self._ocr_pdf(file_path)
+                if ocr_text:
+                    return ocr_text
+            
+            return extracted_text
         except ImportError:
             print("PyPDF2 not installed. Install with: pip install PyPDF2")
             return ""
@@ -429,3 +457,80 @@ class Parser:
         except Exception as e:
             print(f"Error extracting HTML title: {e}")
             return file_path.stem
+    
+    def _extract_title_image(self, file_path: Path) -> str:
+        """Extract title from image file using OCR"""
+        if not HAS_OCR:
+            return file_path.stem
+        
+        try:
+            from PIL import Image
+            
+            # OCR the image
+            img = Image.open(file_path)
+            text = pytesseract.image_to_string(img)
+            
+            if text and text.strip():
+                # Get first non-empty line as title
+                for line in text.split('\n'):
+                    line = line.strip()
+                    if line:
+                        return line[:100] if len(line) > 100 else line
+            
+            return file_path.stem
+        except Exception as e:
+            print(f"Error extracting title from image {file_path.name}: {e}")
+            return file_path.stem
+    
+    def _parse_image(self, file_path: Path) -> str:
+        """Parse text from image file using OCR"""
+        if not HAS_OCR:
+            print(f"Warning: pytesseract not installed. Cannot OCR {file_path.name}")
+            return ""
+        
+        try:
+            from PIL import Image
+            
+            # Open and OCR the image
+            img = Image.open(file_path)
+            text = pytesseract.image_to_string(img)
+            
+            if text and len(text.strip()) > 0:
+                print(f"OCR extracted {len(text)} characters from {file_path.name}")
+            else:
+                print(f"Warning: OCR returned no text from {file_path.name}")
+            
+            return text
+        except Exception as e:
+            print(f"Error during OCR of {file_path.name}: {e}")
+            return ""
+    
+    def _ocr_pdf(self, file_path: Path) -> str:
+        """Convert PDF pages to images and OCR them"""
+        if not HAS_OCR or not HAS_PDF2IMAGE:
+            print(f"Warning: pytesseract or pdf2image not installed. Cannot OCR {file_path.name}")
+            return ""
+        
+        try:
+            from pdf2image import convert_from_path
+            from PIL import Image
+            
+            # Convert PDF pages to images
+            print(f"Converting {file_path.name} to images for OCR...")
+            images = convert_from_path(file_path)
+            
+            # OCR each page
+            all_text = []
+            for i, img in enumerate(images, 1):
+                print(f"OCR'ing page {i}/{len(images)}...")
+                page_text = pytesseract.image_to_string(img)
+                if page_text.strip():
+                    all_text.append(page_text)
+            
+            combined_text = "\n\n".join(all_text)
+            print(f"OCR extracted {len(combined_text)} characters from {len(images)} pages")
+            
+            return combined_text
+        except Exception as e:
+            print(f"Error during PDF OCR of {file_path.name}: {e}")
+            return ""
