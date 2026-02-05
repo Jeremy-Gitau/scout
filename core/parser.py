@@ -410,18 +410,55 @@ class Parser:
             
             reader = PdfReader(str(file_path))
             
-            # Try to get title from metadata first
+            # Try to get title from metadata first (but skip generic/useless titles)
             if reader.metadata and reader.metadata.title:
-                return reader.metadata.title
+                metadata_title = reader.metadata.title.strip()
+                # Skip generic placeholder titles
+                generic_titles = [
+                    'untitled', 'untitled document', 'document',  
+                    'document1', 'new document', 'doc1', 'doc',
+                    file_path.stem,  # Skip if it's just the filename
+                ]
+                if metadata_title.lower() not in generic_titles and len(metadata_title) > 3:
+                    return metadata_title
             
-            # Otherwise get first line of first page
+            # Otherwise get first meaningful line from first page
             if reader.pages:
                 text = reader.pages[0].extract_text()
                 if text:
                     lines = text.split('\n')
+                    
+                    # Skip common non-title patterns
+                    skip_patterns = [
+                        r'^page\s+\d+',  # "Page 1", "Page 1 of 19"
+                        r'^\d+\s+of\s+\d+',  # "1 of 19"
+                        r'^©',  # Copyright
+                        r'^all rights reserved',
+                        r'^confidential',
+                        r'^draft',
+                        r'^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}',  # Dates
+                        r'^[A-Z\s]{20,}$',  # ALL CAPS headers (likely column headers) - only uppercase
+                        r'^(name|code|branch|address|phone|email|date|description|title|id|number)[\s,|]+',  # Table column headers
+                    ]
+                    
                     for line in lines:
                         line = line.strip()
-                        if line:
+                        if not line or len(line) < 3:
+                            continue
+                        
+                        # Check if line is all caps (column headers are often all caps)
+                        if len(line) >= 20 and line.replace(' ', '').isupper():
+                            continue
+                        
+                        # Check if line matches skip patterns
+                        should_skip = False
+                        for pattern in skip_patterns:
+                            if re.search(pattern, line, re.IGNORECASE):
+                                should_skip = True
+                                break
+                        
+                        if not should_skip:
+                            # Found a good title candidate
                             return line[:100] if len(line) > 100 else line
             
             return file_path.stem

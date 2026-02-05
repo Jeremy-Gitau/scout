@@ -32,7 +32,8 @@ python main.py
 - 🔍 **Smart Detection** - Automatically finds abbreviations (API, CPU, NLP, U.S.A., Ph.D.)
 - 📖 **Definition Extraction** - Locates definitions using advanced patterns
 - 👥 **Entity Extraction** - Extract people, organizations, and locations from documents
-- 📂 **16 File Formats** - TXT, PDF, DOCX, XLSX, CSV, JSON, HTML, Markdown, XML, RTF, ODT
+- 📂 **16+ File Formats** - TXT, PDF, DOCX, XLSX, CSV, JSON, HTML, Markdown, XML, RTF, ODT
+- 📷 **OCR Support** - Extract text from scanned documents and images (PNG, JPG, TIFF, BMP, GIF)
 - 🎨 **Triple-Mode Interface** - Abbreviations + Duplicates + Entities
 - 💾 **Multiple Exports** - Save as TXT, CSV, JSON, Excel, or PDF
 - 🌍 **Cross-platform** - Works on macOS, Windows, and Linux
@@ -168,12 +169,25 @@ scout/
    # First run will download models (~400MB)
    ```
 
-5. **Optional: Configure OpenAI API (for LLM entity extraction)**
+5. **Optional: Install Tesseract OCR (for scanned documents/images)**
+   ```bash
+   # macOS (using Homebrew)
+   brew install tesseract
+   
+   # Ubuntu/Debian
+   sudo apt-get install tesseract-ocr
+   
+   # Windows
+   # Download installer from: https://github.com/UB-Mannheim/tesseract/wiki
+   # Add to PATH after installation
+   ```
+
+6. **Optional: Configure OpenAI API (for LLM entity extraction)**
    - Get API key from [OpenAI Platform](https://platform.openai.com/api-keys)
    - Enter key in Entity Extraction mode settings
    - Cost: ~$0.15-0.60 per 1M tokens (GPT-4o-mini)
 
-6. **Run Scout**
+7. **Run Scout**
    ```bash
    python main.py
    ```
@@ -219,6 +233,61 @@ python main.py
 3. Preview duplicates with thumbnails (for images)
 4. Compare files side-by-side
 5. Delete or move duplicates to trash
+
+---
+
+## OCR Support for Scanned Documents
+
+Scout includes Tesseract OCR integration to extract text from scanned documents and images.
+
+### Supported Image Formats
+- PNG (.png)
+- JPEG (.jpg, .jpeg)
+- TIFF (.tiff, .tif)
+- BMP (.bmp)
+- GIF (.gif)
+
+### Features
+- **Automatic Detection**: Scanned PDFs with minimal text (< 100 chars) automatically trigger OCR
+- **Direct Image Processing**: Extract text and entities from image files
+- **Title Extraction**: First line of OCR text used as document title
+- **Full Integration**: Works with all Scout features (entity extraction, abbreviation detection)
+
+### Installation
+Tesseract OCR must be installed separately (Python packages are already included in requirements.txt):
+
+**macOS:**
+```bash
+brew install tesseract
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install tesseract-ocr
+```
+
+**Windows:**
+1. Download installer from [Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki)
+2. Install and add to system PATH
+
+### Usage
+Simply scan folders containing images or scanned PDFs - OCR happens automatically!
+
+```python
+# Example: Manual OCR usage
+from core.parser import Parser
+from pathlib import Path
+
+parser = Parser()
+text = parser.parse_file(Path('scanned_document.png'))
+title = parser.extract_title(Path('scanned_document.png'))
+```
+
+**Note:** OCR accuracy depends on image quality. Best results with:
+- High resolution (300 DPI or higher)
+- Clear, crisp text
+- Good contrast between text and background
+- Minimal skew or rotation
 
 ---
 

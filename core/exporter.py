@@ -42,10 +42,8 @@ class Exporter:
                     # Format abbreviation entry
                     f.write(f"{abbrev}\n")
                     f.write(f"  Definition: {definition}\n")
-                    f.write(f"  Occurrences: {count} time(s)\n")
-                    f.write(f"  Found in: {file_count} file(s)\n")
                     
-                    if info['files'] and file_count <= 3:
+                    if file_count <= 3:
                         # Show all files if 3 or fewer
                         f.write(f"  Files: {', '.join(Path(fp).name for fp in info['files'])}\n")
                     elif info['files']:
@@ -75,8 +73,7 @@ class Exporter:
                 writer = csv.writer(f)
                 
                 # Header
-                writer.writerow(['Abbreviation', 'Definition', 'Occurrences', 
-                               'File Count', 'Files', 'Document Title'])
+                writer.writerow(['Abbreviation', 'Definition', 'File Count', 'Files', 'Document Title'])
                 
                 # Data rows (sorted alphabetically)
                 for abbrev in sorted(abbreviations.keys()):
@@ -90,7 +87,7 @@ class Exporter:
                     first_file = info['files'][0] if info['files'] else ""
                     title = file_titles.get(first_file, "")
                     
-                    writer.writerow([abbrev, definition, count, file_count, files, title])
+                    writer.writerow([abbrev, definition, file_count, files, title])
             
             self.last_export_path = output_file
             return True
@@ -120,7 +117,6 @@ class Exporter:
             for abbrev, info in abbreviations.items():
                 export_data['abbreviations'][abbrev] = {
                     'definition': info['definition'],
-                    'occurrences': info['count'],
                     'files': [str(Path(f).name) for f in info['files']]
                 }
             
@@ -150,7 +146,7 @@ class Exporter:
             ws.title = "Abbreviations"
             
             # Header row with styling
-            headers = ['Abbreviation', 'Definition', 'Occurrences', 'File Count', 'Files', 'Document Title']
+            headers = ['Abbreviation', 'Definition', 'File Count', 'Files', 'Document Title']
             for col, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col, value=header)
                 cell.font = Font(bold=True, size=12)
@@ -170,18 +166,16 @@ class Exporter:
                 
                 ws.cell(row=row, column=1, value=abbrev)
                 ws.cell(row=row, column=2, value=definition)
-                ws.cell(row=row, column=3, value=count)
-                ws.cell(row=row, column=4, value=file_count)
-                ws.cell(row=row, column=5, value=files)
-                ws.cell(row=row, column=6, value=title)
+                ws.cell(row=row, column=3, value=file_count)
+                ws.cell(row=row, column=4, value=files)
+                ws.cell(row=row, column=5, value=title)
             
             # Adjust column widths
             ws.column_dimensions['A'].width = 20
             ws.column_dimensions['B'].width = 50
             ws.column_dimensions['C'].width = 15
-            ws.column_dimensions['D'].width = 15
-            ws.column_dimensions['E'].width = 40
-            ws.column_dimensions['F'].width = 30
+            ws.column_dimensions['D'].width = 40
+            ws.column_dimensions['E'].width = 30
             
             wb.save(output_file)
             self.last_export_path = output_file
@@ -237,15 +231,14 @@ class Exporter:
             elements.append(Spacer(1, 0.3*inch))
             
             # Table data
-            data = [['Abbreviation', 'Definition', 'Count', 'Files']]
+            data = [['Abbreviation', 'Definition', 'Files']]
             for abbrev, info in sorted(abbreviations.items()):
                 definition = info['definition'] or "Definition not found"
-                count = str(info['count'])
                 file_count = str(len(info['files']))
-                data.append([abbrev, definition[:80], count, file_count])
+                data.append([abbrev, definition[:80], file_count])
             
             # Create table
-            table = Table(data, colWidths=[1.2*inch, 4*inch, 0.8*inch, 0.8*inch])
+            table = Table(data, colWidths=[1.2*inch, 4.8*inch, 0.8*inch])
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#366092')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),

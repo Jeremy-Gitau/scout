@@ -122,10 +122,13 @@ class EntityExtractor:
     NON_PERSON_PATTERNS = [
         r'^(Quick|Getting|Install|Run|Document|Entity|Select|Save|Data|Advanced)\s',  # Commands/headers
         r'\s(Guide|Start|Help|Format|Types|Model|Icon|Features|Notes|Drive|Street|Road|Avenue|Lane|Boulevard)$',  # End with non-name words
+        r'\s(Branch|Office|Center|Centre|Hub|Plaza|Square|Tower|Building|Mall|Market)$',  # Branch/location names
+        r'\b(Advantage|Platinum|Premium|Elite|Executive|Business|Corporate)\s*$',  # Service tier names
         r'^[A-Z]{2,}$',  # All caps (likely acronym)
         r'\.(py|md|txt|pdf|exe|sh|bat)$',  # File extensions
         r'[_\-/\\]',  # Contains file path chars
         r'\n',  # Contains newline (malformed extraction)
+        r'^\d+\s',  # Starts with numbers (likely codes/IDs)
     ]
     
     # Words that are definitely not organization names

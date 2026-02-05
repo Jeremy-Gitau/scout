@@ -730,7 +730,7 @@ class ScoutApp:
         scrollbar.pack(side="right", fill="y")
         
         # Treeview for abbreviation results
-        abbrev_columns = ('abbreviation', 'definition', 'occurrences', 'files', 'title')
+        abbrev_columns = ('abbreviation', 'definition', 'files', 'title')
         self.results_tree = ttk.Treeview(
             table_frame,
             columns=abbrev_columns,
@@ -745,14 +745,12 @@ class ScoutApp:
         # Define headings for abbreviations
         self.results_tree.heading('abbreviation', text='Abbreviation')
         self.results_tree.heading('definition', text='Definition')
-        self.results_tree.heading('occurrences', text='Count')
         self.results_tree.heading('files', text='Files')
         self.results_tree.heading('title', text='Title')
         
         # Define column widths
         self.results_tree.column('abbreviation', width=120, anchor="w")
         self.results_tree.column('definition', width=250, anchor="w")
-        self.results_tree.column('occurrences', width=60, anchor=CENTER)
         self.results_tree.column('files', width=60, anchor=CENTER)
         self.results_tree.column('title', width=200, anchor="w")
         
@@ -1400,7 +1398,7 @@ class ScoutApp:
             self.results_tree.insert(
                 '',
                 'end',
-                values=(abbrev, definition, count, file_count, title),
+                values=(abbrev, definition, file_count, title),
                 tags=(tag,)
             )
     
