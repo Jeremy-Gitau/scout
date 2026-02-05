@@ -439,6 +439,8 @@ class Parser:
                         r'^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}',  # Dates
                         r'^[A-Z\s]{20,}$',  # ALL CAPS headers (likely column headers) - only uppercase
                         r'^(name|code|branch|address|phone|email|date|description|title|id|number)[\s,|]+',  # Table column headers
+                        r'\b\d{2,}\s+\d{2,}',  # Multiple numbers separated by spaces (likely data rows)
+                        r'\b(ltd|limited|inc|corp|corporation)\s+\d',  # Company name followed by numbers (likely data)
                     ]
                     
                     for line in lines:
@@ -448,6 +450,11 @@ class Parser:
                         
                         # Check if line is all caps (column headers are often all caps)
                         if len(line) >= 20 and line.replace(' ', '').isupper():
+                            continue
+                        
+                        # Skip lines with multiple numbers (likely data rows, not titles)
+                        numbers_in_line = len(re.findall(r'\d+', line))
+                        if numbers_in_line >= 3:
                             continue
                         
                         # Check if line matches skip patterns

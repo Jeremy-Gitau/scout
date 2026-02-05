@@ -196,6 +196,16 @@ class EntityExtractor:
         'chairs', 'chair', 'secretary', 'treasurer'
     }
     
+    # Known place names that spaCy often misclassifies as people
+    # These appear frequently in banking/business documents
+    PLACE_NAMES_AS_PEOPLE = {
+        # Kenyan cities and regions
+        'maasai mara', 'homa bay', 'naro moro', 'voi', 'embu', 'busia',
+        'kakamega', 'kitui', 'bungoma', 'eldoret', 'nyeri', 'muranga',
+        # Other common misclassifications
+        'bay area', 'silicon valley', 'wall street',
+    }
+    
     # Country list (top 50 most common)
     COUNTRIES = {
         'Kenya', 'United States', 'USA', 'US', 'United Kingdom', 'UK', 'Britain',
@@ -236,6 +246,10 @@ class EntityExtractor:
     def _is_valid_person_name(self, name: str) -> bool:
         """Validate if a string is likely a person name"""
         if not name or len(name) < 3:
+            return False
+        
+        # Check if it's a known place name misclassified as person
+        if name.lower() in self.PLACE_NAMES_AS_PEOPLE:
             return False
         
         # Must have at least 2 words for a full name
