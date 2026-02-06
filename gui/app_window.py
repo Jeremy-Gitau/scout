@@ -50,8 +50,15 @@ class ScoutApp:
         self.entity_results = {}  # Store entity extraction results
         self.openai_api_key = None  # OpenAI API key
         
+        # Custom extraction state
+        self.custom_results = []  # Store custom extraction results
+        self.custom_api_key = None
+        self.custom_model = "gpt-4o-mini"
+        self.custom_prompt = ""
+        self.is_custom_extracting = False
+        
         # Mode state
-        self.current_mode = "abbreviations"  # 'abbreviations', 'duplicates', or 'entities'
+        self.current_mode = "abbreviations"  # 'abbreviations', 'duplicates', 'entities', or 'custom'
         
         # Setup logging
         self._setup_logging()
@@ -287,7 +294,16 @@ class ScoutApp:
             bootstyle="secondary-outline",
             width=18
         )
-        self.entity_mode_btn.pack(side="left")
+        self.entity_mode_btn.pack(side="left", padx=(0, 5))
+        
+        self.custom_mode_btn = ttk.Button(
+            mode_frame,
+            text="🎯 Custom AI",
+            command=lambda: self._switch_mode("custom"),
+            bootstyle="secondary-outline",
+            width=18
+        )
+        self.custom_mode_btn.pack(side="left")
     
     def _create_control_panel(self, parent):
         control_frame = ttk.LabelFrame(
@@ -649,7 +665,149 @@ class ScoutApp:
         self.clear_entities_btn.pack(side="left")
         self.clear_entities_btn.configure(state="disabled")
         
-        # Common cancel button (for both modes)
+        # === CUSTOM AI EXTRACTION MODE CONTROLS ===
+        self.custom_controls = ttk.Frame(inner_frame)
+        
+        # Custom API key and model selection
+        custom_api_frame = ttk.Frame(self.custom_controls)
+        custom_api_frame.pack(fill='x', pady=(0, 10))
+        
+        ttk.Label(
+            custom_api_frame,
+            text="OpenAI API Key:",
+            font=("Helvetica", 10, "bold")
+        ).pack(side="left", padx=(0, 10))
+        
+        self.custom_api_key_var = tk.StringVar()
+        custom_api_entry = ttk.Entry(
+            custom_api_frame,
+            textvariable=self.custom_api_key_var,
+            font=("Helvetica", 10),
+            show="•",  # Mask the API key
+            width=35
+        )
+        custom_api_entry.pack(side="left", padx=(0, 20))
+        
+        ttk.Label(
+            custom_api_frame,
+            text="Model:",
+            font=("Helvetica", 10, "bold")
+        ).pack(side="left", padx=(0, 10))
+        
+        self.custom_model_var = tk.StringVar(value="gpt-4o-mini")
+        from core.custom_extractor import CustomExtractor
+        models = CustomExtractor.get_available_models()
+        model_display_names = [display for _, display in models]
+        model_values = [model_id for model_id, _ in models]
+        
+        self.custom_model_combo = ttk.Combobox(
+            custom_api_frame,
+            textvariable=self.custom_model_var,
+            values=model_values,
+            state="readonly",
+            width=25
+        )
+        self.custom_model_combo.pack(side="left")
+        
+        # Prompt selection and input
+        prompt_frame = ttk.Frame(self.custom_controls)
+        prompt_frame.pack(fill='x', pady=(0, 10))
+        
+        prompt_label_frame = ttk.Frame(prompt_frame)
+        prompt_label_frame.pack(fill='x', pady=(0, 5))
+        
+        ttk.Label(
+            prompt_label_frame,
+            text="Extraction Prompt:",
+            font=("Helvetica", 10, "bold")
+        ).pack(side="left", padx=(0, 10))
+        
+        ttk.Label(
+            prompt_label_frame,
+            text="Template:",
+            font=("Helvetica", 9)
+        ).pack(side="left", padx=(20, 10))
+        
+        self.prompt_template_var = tk.StringVar(value="Custom")
+        example_prompts = CustomExtractor.get_example_prompts()
+        prompt_names = [name for name, _ in example_prompts]
+        
+        prompt_template_combo = ttk.Combobox(
+            prompt_label_frame,
+            textvariable=self.prompt_template_var,
+            values=prompt_names,
+            state="readonly",
+            width=25
+        )
+        prompt_template_combo.pack(side="left")
+        prompt_template_combo.bind('<<ComboboxSelected>>', self._on_prompt_template_changed)
+        
+        # Store example prompts for lookup
+        self.example_prompts = dict(example_prompts)
+        
+        # Multi-line text area for prompt
+        prompt_text_frame = ttk.Frame(prompt_frame)
+        prompt_text_frame.pack(fill='both', expand=False)
+        
+        self.custom_prompt_text = tk.Text(
+            prompt_text_frame,
+            height=5,
+            width=80,
+            font=("Helvetica", 10),
+            wrap=tk.WORD
+        )
+        self.custom_prompt_text.pack(side="left", fill='both', expand=True)
+        
+        # Scrollbar for prompt text
+        prompt_scrollbar = ttk.Scrollbar(
+            prompt_text_frame,
+            orient="vertical",
+            command=self.custom_prompt_text.yview
+        )
+        prompt_scrollbar.pack(side="right", fill="y")
+        self.custom_prompt_text.config(yscrollcommand=prompt_scrollbar.set)
+        
+        # Placeholder text
+        self.custom_prompt_text.insert("1.0", "Enter your extraction instructions here. Be specific about what data you want extracted and in what format...")
+        self.custom_prompt_text.config(foreground="gray")
+        self.custom_prompt_text.bind("<FocusIn>", self._on_prompt_focus_in)
+        self.custom_prompt_text.bind("<FocusOut>", self._on_prompt_focus_out)
+        
+        # Custom extraction buttons
+        custom_button_frame = ttk.Frame(self.custom_controls)
+        custom_button_frame.pack(fill="x", pady=(10, 0))
+        
+        self.custom_extract_btn = ttk.Button(
+            custom_button_frame,
+            text="🎯 Custom Extract",
+            command=self._start_custom_extraction,
+            bootstyle="primary",
+            width=25
+        )
+        self.custom_extract_btn.pack(side="left", padx=(0, 10))
+        self.custom_extract_btn.configure(state="disabled")
+        
+        self.export_custom_btn = ttk.Button(
+            custom_button_frame,
+            text="💾 Export Results",
+            command=self._export_custom_results,
+            bootstyle="info-outline",
+            width=25
+        )
+        self.export_custom_btn.pack(side="left", padx=(0, 10))
+        self.export_custom_btn.configure(state="disabled")
+        
+        self.clear_custom_btn = ttk.Button(
+            custom_button_frame,
+            text="🗑️ Clear Results",
+            command=self._clear_custom_results,
+            bootstyle="secondary-outline",
+            width=20
+        )
+        self.clear_custom_btn.pack(side="left")
+        self.clear_custom_btn.configure(state="disabled")
+        
+        # Common cancel button (for all modes)
         self.cancel_btn_scan = ttk.Button(
             inner_frame,
             text="⏹️ Cancel",
@@ -929,6 +1087,11 @@ class ScoutApp:
             self.scan_btn.configure(state="normal")
             self.scan_duplicates_btn.configure(state="normal")
             self.extract_entities_btn.configure(state="normal")
+            
+            # Enable custom extract button only if we're in custom mode
+            if self.current_mode == "custom":
+                self.custom_extract_btn.configure(state="normal")
+            
             self.status_label.config(text=f"Ready to scan: {Path(directory).name}")
     
     def _select_file(self):
@@ -961,10 +1124,15 @@ class ScoutApp:
             self.scan_btn.configure(state="normal")
             self.scan_duplicates_btn.configure(state="disabled")
             self.extract_entities_btn.configure(state="normal")
+            
+            # Enable custom extract button only if we're in custom mode
+            if self.current_mode == "custom":
+                self.custom_extract_btn.configure(state="normal")
+            
             self.status_label.config(text=f"Ready to scan: {Path(file_path).name}")
     
     def _switch_mode(self, mode: str):
-        if self.is_scanning or self.is_scanning_duplicates or self.is_extracting_entities:
+        if self.is_scanning or self.is_scanning_duplicates or self.is_extracting_entities or self.is_custom_extracting:
             messagebox.showwarning(
                 "Operation in Progress",
                 "Please wait for the current operation to complete or cancel it before switching modes."
@@ -978,11 +1146,13 @@ class ScoutApp:
             self.abbrev_mode_btn.configure(bootstyle="primary")
             self.dedupe_mode_btn.configure(bootstyle="secondary-outline")
             self.entity_mode_btn.configure(bootstyle="secondary-outline")
+            self.custom_mode_btn.configure(bootstyle="secondary-outline")
             
             # Show abbreviation controls, hide others
             self.abbrev_controls.pack(fill='x')
             self.dedupe_controls.pack_forget()
             self.entity_controls.pack_forget()
+            self.custom_controls.pack_forget()
             
             # Update UI elements
             self.status_label.config(text="Abbreviation Scanner mode - Select a folder to begin")
@@ -1002,11 +1172,13 @@ class ScoutApp:
             self.abbrev_mode_btn.configure(bootstyle="secondary-outline")
             self.dedupe_mode_btn.configure(bootstyle="primary")
             self.entity_mode_btn.configure(bootstyle="secondary-outline")
+            self.custom_mode_btn.configure(bootstyle="secondary-outline")
             
             # Show dedupe controls, hide others
             self.dedupe_controls.pack(fill='x')
             self.abbrev_controls.pack_forget()
             self.entity_controls.pack_forget()
+            self.custom_controls.pack_forget()
             
             # Update UI elements
             self.status_label.config(text="File Deduplicator mode - Select a folder to begin")
@@ -1021,15 +1193,17 @@ class ScoutApp:
             # Update scan button text based on dry run mode
             self._update_scan_button_text()
             
-        else:  # entities mode
+        elif mode == "entities":
             self.abbrev_mode_btn.configure(bootstyle="secondary-outline")
             self.dedupe_mode_btn.configure(bootstyle="secondary-outline")
             self.entity_mode_btn.configure(bootstyle="primary")
+            self.custom_mode_btn.configure(bootstyle="secondary-outline")
             
             # Show entity controls, hide others
             self.entity_controls.pack(fill='x')
             self.abbrev_controls.pack_forget()
             self.dedupe_controls.pack_forget()
+            self.custom_controls.pack_forget()
             
             # Update UI elements
             self.status_label.config(text="Entity Extraction mode - Select a folder or file to begin")
@@ -1044,6 +1218,32 @@ class ScoutApp:
             # Enable extract button
             if self.selected_directory or self.selected_file:
                 self.extract_entities_btn.configure(state="normal")
+        
+        else:  # custom mode
+            self.abbrev_mode_btn.configure(bootstyle="secondary-outline")
+            self.dedupe_mode_btn.configure(bootstyle="secondary-outline")
+            self.entity_mode_btn.configure(bootstyle="secondary-outline")
+            self.custom_mode_btn.configure(bootstyle="primary")
+            
+            # Show custom controls, hide others
+            self.custom_controls.pack(fill='x')
+            self.abbrev_controls.pack_forget()
+            self.dedupe_controls.pack_forget()
+            self.entity_controls.pack_forget()
+            
+            # Update UI elements
+            self.status_label.config(text="Custom AI Extraction mode - Enter API key and prompt to begin")
+            self._log("Switched to Custom AI Extraction mode", "INFO")
+            
+            # Hide all results tables for clean slate
+            self.results_tree.pack_forget()
+            self.duplicates_tree.pack_forget()
+            self.entities_tree.pack_forget()
+            self.stats_label.pack_forget()
+            
+            # Enable custom extract button
+            if self.selected_directory or self.selected_file:
+                self.custom_extract_btn.configure(state="normal")
         
         # Reset selection state
         if self.selected_directory:
@@ -1081,9 +1281,19 @@ class ScoutApp:
     
     def _cancel_scan(self):
         
-        if self.is_scanning or self.is_scanning_duplicates:
+        if self.is_scanning or self.is_scanning_duplicates or self.is_extracting_entities or self.is_custom_extracting:
             self.cancel_scan = True
-            scan_type = "duplicate scan" if self.is_scanning_duplicates else "scan"
+            
+            # Determine scan type
+            if self.is_scanning_duplicates:
+                scan_type = "duplicate scan"
+            elif self.is_extracting_entities:
+                scan_type = "entity extraction"
+            elif self.is_custom_extracting:
+                scan_type = "custom extraction"
+            else:
+                scan_type = "scan"
+            
             self._log(f"User requested {scan_type} cancellation", "WARN")
             self.status_label.config(text=f"Cancelling {scan_type}...")
             self.cancel_btn_scan.configure(state="disabled")
@@ -3580,6 +3790,460 @@ class ScoutApp:
         self.export_entities_btn.configure(state="disabled")
         self.clear_entities_btn.configure(state="disabled")
         self._log("Entity results cleared", "INFO")
+    
+    # ========================================
+    # CUSTOM EXTRACTION METHODS
+    # ========================================
+    
+    def _on_prompt_template_changed(self, event=None):
+        """Handle prompt template selection"""
+        template_name = self.prompt_template_var.get()
+        if template_name in self.example_prompts:
+            prompt_text = self.example_prompts[template_name]
+            self.custom_prompt_text.delete("1.0", tk.END)
+            if prompt_text:
+                self.custom_prompt_text.insert("1.0", prompt_text)
+                self.custom_prompt_text.config(foreground="black")
+            else:
+                self.custom_prompt_text.insert("1.0", "Enter your extraction instructions here. Be specific about what data you want extracted and in what format...")
+                self.custom_prompt_text.config(foreground="gray")
+    
+    def _on_prompt_focus_in(self, event):
+        """Handle focus in prompt text area"""
+        if self.custom_prompt_text.get("1.0", tk.END).strip() == "Enter your extraction instructions here. Be specific about what data you want extracted and in what format...":
+            self.custom_prompt_text.delete("1.0", tk.END)
+            self.custom_prompt_text.config(foreground="black")
+    
+    def _on_prompt_focus_out(self, event):
+        """Handle focus out prompt text area"""
+        if not self.custom_prompt_text.get("1.0", tk.END).strip():
+            self.custom_prompt_text.insert("1.0", "Enter your extraction instructions here. Be specific about what data you want extracted and in what format...")
+            self.custom_prompt_text.config(foreground="gray")
+    
+    def _start_custom_extraction(self):
+        """Start custom extraction in a background thread"""
+        if not self.selected_directory and not self.selected_file:
+            return
+        
+        # Validate inputs
+        api_key = self.custom_api_key_var.get().strip()
+        if not api_key:
+            messagebox.showwarning(
+                "API Key Required",
+                "Please enter an API key for custom extraction."
+            )
+            return
+        
+        prompt = self.custom_prompt_text.get("1.0", tk.END).strip()
+        if not prompt or prompt == "Enter your extraction instructions here. Be specific about what data you want extracted and in what format...":
+            messagebox.showwarning(
+                "Prompt Required",
+                "Please enter extraction instructions in the prompt field."
+            )
+            return
+        
+        # Store settings
+        self.custom_api_key = api_key
+        self.custom_prompt = prompt
+        self.custom_model = self.custom_model_var.get()
+        
+        # Reset state
+        self.cancel_scan = False
+        self.is_custom_extracting = True
+        
+        # Update UI
+        self.custom_extract_btn.configure(state="disabled")
+        self.export_custom_btn.configure(state="disabled")
+        self.select_folder_btn.configure(state="disabled")
+        self.select_file_btn.configure(state="disabled")
+        
+        # Show cancel button
+        self.cancel_btn_scan.pack(side="bottom", pady=(10, 0))
+        self.cancel_btn_scan.configure(state="normal")
+        
+        # Start extraction in background thread
+        thread = threading.Thread(target=self._run_custom_extraction, daemon=True)
+        thread.start()
+        
+        self._log(f"Starting custom extraction with {self.custom_model}", "INFO")
+    
+    def _run_custom_extraction(self):
+        """Run custom extraction in background thread"""
+        try:
+            from core.custom_extractor import CustomExtractor
+            
+            self._update_entity_progress("Initializing custom extraction...", 10)
+            
+            # Initialize custom extractor
+            extractor = CustomExtractor(
+                api_key=self.custom_api_key,
+                model=self.custom_model,
+                provider="openai"
+            )
+            
+            # Get files to process
+            if self.selected_file:
+                files = [self.selected_file]
+            else:
+                self._update_entity_progress("Scanning for documents...", 20)
+                files = self.scanner.scan_directory(self.selected_directory)
+            
+            if not files:
+                self._update_entity_progress("No documents found!", 100)
+                self._log("No documents found for custom extraction", "WARN")
+                return
+            
+            self._log(f"Found {len(files)} document(s) for custom extraction", "INFO")
+            
+            # Process each file
+            results = []
+            
+            for idx, file_path in enumerate(files):
+                if self.cancel_scan:
+                    self._log("Custom extraction cancelled by user", "WARN")
+                    self._update_entity_progress("Extraction cancelled", 100)
+                    return
+                
+                progress = 20 + (idx / len(files)) * 70
+                self._update_entity_progress(f"Processing: {Path(file_path).name}", progress)
+                
+                try:
+                    # Parse document
+                    text = self.parser.parse_file(Path(file_path))
+                    if not text or len(text.strip()) < 50:
+                        self._log(f"Skipping {file_path}: insufficient text", "WARN")
+                        continue
+                    
+                    self._log(f"Extracting from {Path(file_path).name} using AI...", "INFO")
+                    
+                    # Extract using custom prompt
+                    result = extractor.extract(
+                        text=text,
+                        prompt=self.custom_prompt,
+                        source_file=str(Path(file_path).name)
+                    )
+                    
+                    results.append(result)
+                    
+                    if result.success:
+                        self._log(f"Successfully extracted data from {Path(file_path).name}", "INFO")
+                    else:
+                        self._log(f"Extraction failed for {Path(file_path).name}: {result.error_message}", "ERROR")
+                    
+                except Exception as e:
+                    self._log(f"Error processing {file_path}: {e}", "ERROR")
+            
+            # Store results
+            self.custom_results = results
+            
+            # Update UI with results
+            self._update_entity_progress("Displaying results...", 95)
+            self.root.after(0, self._display_custom_results)
+            
+            self._update_entity_progress("Custom extraction complete!", 100)
+            
+            successful = sum(1 for r in results if r.success)
+            self._log(f"Custom extraction completed: {successful}/{len(results)} successful", "INFO")
+            
+        except Exception as e:
+            error_msg = str(e)
+            self._log(f"Custom extraction failed: {error_msg}", "ERROR")
+            self._update_entity_progress("Extraction failed!", 100)
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Custom extraction failed:\n{error_msg}"))
+        
+        finally:
+            self.is_custom_extracting = False
+            self.root.after(0, self._custom_extraction_complete)
+    
+    def _display_custom_results(self):
+        """Display custom extraction results"""
+        if not self.custom_results:
+            return
+        
+        # Create or update results window
+        results_window = tk.Toplevel(self.root)
+        results_window.title("Custom Extraction Results")
+        results_window.geometry("900x600")
+        results_window.transient(self.root)
+        
+        # Main container
+        main_frame = ttk.Frame(results_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Header
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 15))
+        
+        ttk.Label(
+            header_frame,
+            text="🎯 Custom Extraction Results",
+            font=("Helvetica", 18, "bold"),
+            bootstyle="primary"
+        ).pack(side="left")
+        
+        # Summary stats
+        total = len(self.custom_results)
+        successful = sum(1 for r in self.custom_results if r.success)
+        failed = total - successful
+        
+        stats_frame = ttk.Frame(header_frame)
+        stats_frame.pack(side="right")
+        
+        ttk.Label(
+            stats_frame,
+            text=f"✅ {successful} successful  ❌ {failed} failed  📄 {total} total",
+            font=("Helvetica", 11),
+            bootstyle="info"
+        ).pack()
+        
+        # Notebook for tabbed results
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill="both", expand=True)
+        
+        # Tab 1: Summary view
+        summary_frame = ttk.Frame(notebook, padding=10)
+        notebook.add(summary_frame, text="📊 Summary")
+        
+        # Create tree for summary
+        tree_frame = ttk.Frame(summary_frame)
+        tree_frame.pack(fill="both", expand=True)
+        
+        summary_tree = ttk.Treeview(
+            tree_frame,
+            columns=("File", "Status", "Keys", "Preview"),
+            show="tree headings",
+            selectmode="browse"
+        )
+        summary_tree.heading("#0", text="", anchor="w")
+        summary_tree.heading("File", text="File", anchor="w")
+        summary_tree.heading("Status", text="Status", anchor="center")
+        summary_tree.heading("Keys", text="Data Keys", anchor="w")
+        summary_tree.heading("Preview", text="Preview", anchor="w")
+        
+        summary_tree.column("#0", width=30, stretch=False)
+        summary_tree.column("File", width=200, anchor="w")
+        summary_tree.column("Status", width=100, anchor="center")
+        summary_tree.column("Keys", width=200, anchor="w")
+        summary_tree.column("Preview", width=300, anchor="w")
+        
+        # Add scrollbars
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=summary_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=summary_tree.xview)
+        summary_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        summary_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Populate summary tree
+        for idx, result in enumerate(self.custom_results):
+            status = "✅ Success" if result.success else f"❌ {result.error_message}"
+            keys = ", ".join(result.extracted_data.keys()) if result.success else "N/A"
+            
+            # Create preview
+            if result.success and result.extracted_data:
+                preview_parts = []
+                for k, v in list(result.extracted_data.items())[:2]:
+                    if isinstance(v, list):
+                        preview_parts.append(f"{k}: [{len(v)} items]")
+                    elif isinstance(v, dict):
+                        preview_parts.append(f"{k}: {{{len(v)} keys}}")
+                    else:
+                        preview_parts.append(f"{k}: {str(v)[:30]}")
+                preview = "; ".join(preview_parts)
+            else:
+                preview = ""
+            
+            summary_tree.insert("", "end", values=(
+                result.source_file,
+                status,
+                keys,
+                preview
+            ))
+        
+        # Tab 2: Raw JSON view
+        json_frame = ttk.Frame(notebook, padding=10)
+        notebook.add(json_frame, text="📄 Raw JSON")
+        
+        # Create text widget for JSON
+        json_text_frame = ttk.Frame(json_frame)
+        json_text_frame.pack(fill="both", expand=True)
+        
+        json_text = tk.Text(
+            json_text_frame,
+            wrap=tk.NONE,
+            font=("Courier", 10)
+        )
+        json_text.pack(side="left", fill="both", expand=True)
+        
+        json_vsb = ttk.Scrollbar(json_text_frame, orient="vertical", command=json_text.yview)
+        json_vsb.pack(side="right", fill="y")
+        json_text.config(yscrollcommand=json_vsb.set)
+        
+        # Format and insert JSON
+        import json
+        from core.custom_extractor import aggregate_custom_results
+        
+        aggregated = aggregate_custom_results(self.custom_results)
+        json_text.insert("1.0", json.dumps(aggregated, indent=2, default=str))
+        json_text.config(state="disabled")
+        
+        # Buttons at bottom
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(15, 0))
+        
+        ttk.Button(
+            button_frame,
+            text="💾 Export Results",
+            command=self._export_custom_results,
+            bootstyle="success",
+            width=20
+        ).pack(side="left", padx=(0, 10))
+        
+        ttk.Button(
+            button_frame,
+            text="📋 Copy JSON",
+            command=lambda: self._copy_to_clipboard(json.dumps(aggregated, indent=2, default=str)),
+            bootstyle="info-outline",
+            width=20
+        ).pack(side="left", padx=(0, 10))
+        
+        ttk.Button(
+            button_frame,
+            text="Close",
+            command=results_window.destroy,
+            bootstyle="secondary",
+            width=15
+        ).pack(side="right")
+        
+        self._log(f"Displayed custom extraction results", "INFO")
+    
+    def _custom_extraction_complete(self):
+        """Re-enable UI after custom extraction completes"""
+        self.custom_extract_btn.configure(state="normal")
+        self.select_folder_btn.configure(state="normal")
+        self.select_file_btn.configure(state="normal")
+        self.cancel_btn_scan.pack_forget()
+        
+        # Enable export if we have results
+        if self.custom_results and any(r.success for r in self.custom_results):
+            self.export_custom_btn.configure(state="normal")
+            self.clear_custom_btn.configure(state="normal")
+        
+        # Update status
+        if self.selected_directory:
+            folder_name = Path(self.selected_directory).name
+            self.status_label.config(text=f"Custom extraction complete: {folder_name}")
+        elif self.selected_file:
+            file_name = Path(self.selected_file).name
+            self.status_label.config(text=f"Custom extraction complete: {file_name}")
+    
+    def _export_custom_results(self):
+        """Export custom extraction results"""
+        if not self.custom_results or not any(r.success for r in self.custom_results):
+            messagebox.showwarning("No Results", "No successful custom extraction results to export.")
+            return
+        
+        # Ask user for format
+        format_choice = messagebox.askquestion(
+            "Export Format",
+            "Export as JSON?\n\nYes = JSON format\nNo = CSV format",
+            icon='question'
+        )
+        
+        # Get save location
+        if format_choice == 'yes':
+            file_path = filedialog.asksaveasfilename(
+                title="Save Custom Results",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            )
+            if file_path:
+                self._export_custom_json(file_path)
+        else:
+            file_path = filedialog.asksaveasfilename(
+                title="Save Custom Results",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            if file_path:
+                self._export_custom_csv(file_path)
+    
+    def _export_custom_json(self, file_path: str):
+        """Export custom results as JSON"""
+        try:
+            import json
+            from core.custom_extractor import aggregate_custom_results
+            
+            aggregated = aggregate_custom_results(self.custom_results)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(aggregated, f, indent=2, default=str)
+            
+            self._log(f"Exported custom results to {file_path}", "INFO")
+            messagebox.showinfo("Success", f"Results exported to:\n{file_path}")
+            
+        except Exception as e:
+            self._log(f"Failed to export JSON: {e}", "ERROR")
+            messagebox.showerror("Error", f"Failed to export results:\n{e}")
+    
+    def _export_custom_csv(self, file_path: str):
+        """Export custom results as CSV (flattened)"""
+        try:
+            import csv
+            
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write header
+                writer.writerow(["Source File", "Status", "Key", "Value"])
+                
+                # Write data
+                for result in self.custom_results:
+                    if result.success:
+                        for key, value in result.extracted_data.items():
+                            if isinstance(value, (list, dict)):
+                                import json
+                                value_str = json.dumps(value)
+                            else:
+                                value_str = str(value)
+                            
+                            writer.writerow([
+                                result.source_file,
+                                "Success",
+                                key,
+                                value_str
+                            ])
+                    else:
+                        writer.writerow([
+                            result.source_file,
+                            "Failed",
+                            "Error",
+                            result.error_message
+                        ])
+            
+            self._log(f"Exported custom results to {file_path}", "INFO")
+            messagebox.showinfo("Success", f"Results exported to:\n{file_path}")
+            
+        except Exception as e:
+            self._log(f"Failed to export CSV: {e}", "ERROR")
+            messagebox.showerror("Error", f"Failed to export results:\n{e}")
+    
+    def _clear_custom_results(self):
+        """Clear custom extraction results"""
+        self.custom_results = []
+        self.export_custom_btn.configure(state="disabled")
+        self.clear_custom_btn.configure(state="disabled")
+        self._log("Custom extraction results cleared", "INFO")
+    
+    def _copy_to_clipboard(self, text: str):
+        """Copy text to clipboard"""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        messagebox.showinfo("Copied", "Text copied to clipboard!")
     
     def run(self):
         
